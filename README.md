@@ -2,7 +2,7 @@
 
 A dynamic persona system for agent fleets. When a polecat picks up a task, it equips a principal-engineer persona matched to that task, performs the work at that level, then dematerializes. Recently-used personas stay warm so other agents can reuse them, and they age out of the system after a period of disuse.
 
-> Status: early scaffolding. This repository is the home of the design and the implementation as it lands.
+> Status: v0 scaffold landed. The design lives here; the implementation lives in [`pack/`](pack/) — a stdlib-only gas-city pack with the registry, the equip/match engine, the warm-cache + TTL lifecycle, the equip-on-task-pickup hook, and a CLI. See [`pack/README.md`](pack/README.md) and [`pack/docs/DESIGN.md`](pack/docs/DESIGN.md).
 
 ## The idea
 

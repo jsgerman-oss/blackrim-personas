@@ -6,3 +6,6 @@ dist/
 build/
 .DS_Store
 .beads/
+
+# gas-town worktree runtime state (sessions, projected settings, tool catalogs)
+.gc/
