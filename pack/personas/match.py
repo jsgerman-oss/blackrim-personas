@@ -18,6 +18,18 @@ that fired, so ``personas match`` can show *why* a persona was chosen. Scoring:
 
 With no signal at all the engine returns the registry's default (generalist) persona,
 flagged ``is_fallback=True``, so the caller always gets a usable answer.
+
+This module owns both halves of the README's *equip* step:
+
+- **select** — :func:`match_persona` returns the equip decision (which persona won, the
+  score, the terms that fired, and the ranked runners-up).
+- **overlay / materialize** — :func:`render_overlay` assembles a chosen persona's full
+  working context (playbook, domain, skills, tools, verification bar) into the markdown
+  that overlays the agent for one task — the README's *materialize* step. :func:`equip`
+  composes select + overlay into one ready, equipped state, so every consumer (the CLI,
+  the equip-on-task-pickup hook, tests) equips one canonical way. The warm cache
+  (:mod:`personas.cache`) is the complementary layer that keeps a materialized persona
+  warm for the next agent to reuse.
 """
 
 from __future__ import annotations
@@ -158,7 +170,15 @@ def score_persona(persona: Persona, task_sing: set[str], task_padded_sing: str) 
 
 
 def match_persona(config: PersonasConfig, task: str) -> MatchResult:
-    """Return the best-fit persona for ``task`` (the equip decision)."""
+    """Return the best-fit persona for ``task`` (the equip decision).
+
+    Raises :class:`ValueError` if the roster is empty — there is no persona to equip
+    or to fall back to. The registry loader guarantees a non-empty roster, so this only
+    guards a directly-constructed config; it turns an opaque ``IndexError`` deep in the
+    fallback path into a clear error at the boundary.
+    """
+    if not config.personas:
+        raise ValueError("cannot match a task against an empty persona roster")
     task_sing_tokens = _singularize(normalize(task))
     task_sing = set(task_sing_tokens)
     task_padded_sing = " " + " ".join(task_sing_tokens) + " "
@@ -189,3 +209,88 @@ def match_persona(config: PersonasConfig, task: str) -> MatchResult:
         is_fallback=False,
         task=task,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Overlay / materialize — assemble a persona into the context it overlays with  #
+# --------------------------------------------------------------------------- #
+
+
+def render_overlay(persona: Persona, result: MatchResult | None = None) -> str:
+    """Materialize ``persona`` into the markdown overlay injected onto an agent.
+
+    This is the README's *materialize* step — "assemble the persona's full working
+    context (playbook, domain knowledge, relevant skills) into a ready, equipped
+    state." The returned markdown is what the equip-on-task-pickup hook feeds to a
+    Claude Code ``SessionStart`` hook as ``additionalContext``, overlaying the
+    persona's role onto the agent for the duration of one task.
+
+    When ``result`` is given, a one-line provenance note explains *why* this persona
+    was equipped — the terms it matched, or that it is the default fallback — so the
+    overlay is self-documenting. Persona fields that are empty are omitted rather than
+    rendered as bare headings, so a lean persona still produces clean output. The
+    result always ends in exactly one trailing newline.
+    """
+    lines = [f"# Equipped persona: {persona.title}", ""]
+    if result is not None:
+        if result.is_fallback:
+            lines.append(
+                "_No strong task match — equipped the default (generalist) persona._"
+            )
+        elif result.matched:
+            lines.append(
+                f"_Matched on: {', '.join(result.matched)} (score {result.score:g})._"
+            )
+        lines.append("")
+    if persona.domain:
+        lines += [f"**Domain.** {persona.domain}", ""]
+    if persona.playbook:
+        lines += ["**Playbook.**", persona.playbook, ""]
+    if persona.skills:
+        lines.append(f"**Skills to lean on:** {', '.join(persona.skills)}")
+    if persona.tools:
+        lines.append(f"**Tools:** {', '.join(persona.tools)}")
+    if persona.verification_bar:
+        lines += [
+            "",
+            f"**Verification bar (do not hand off below this):** {persona.verification_bar}",
+        ]
+    return "\n".join(lines).strip() + "\n"
+
+
+@dataclass(frozen=True)
+class Equip:
+    """A persona equipped for one task: the match decision plus the materialized overlay.
+
+    The README's "ready, equipped state" — *select* (which persona and why) and
+    *overlay* (the working context to inject) composed into one value, so every
+    consumer equips one canonical way instead of re-deriving the overlay. The warm
+    cache (:mod:`personas.cache`) is the complementary layer: it records the equipped
+    persona so the next agent reuses it warm; this object is the pure select-and-render
+    that the cache amortizes.
+    """
+
+    result: MatchResult
+    overlay: str
+
+    @property
+    def persona(self) -> Persona:
+        """The equipped persona (the match's best-fit, or the default fallback)."""
+        return self.result.best
+
+    @property
+    def is_fallback(self) -> bool:
+        """True when no task signal matched and the default persona was equipped."""
+        return self.result.is_fallback
+
+
+def equip(config: PersonasConfig, task: str) -> Equip:
+    """Select the best-fit persona for ``task`` and materialize its overlay.
+
+    The README's *equip* step end to end: composes :func:`match_persona` (select) with
+    :func:`render_overlay` (materialize) into the ready, equipped state. The caller gets
+    the chosen persona, the provenance, and the markdown overlay to inject — in one call.
+    Raises :class:`ValueError` on an empty roster (via :func:`match_persona`).
+    """
+    result = match_persona(config, task)
+    return Equip(result=result, overlay=render_overlay(result.best, result))

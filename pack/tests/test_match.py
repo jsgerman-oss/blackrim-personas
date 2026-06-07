@@ -169,3 +169,177 @@ def test_tie_breaks_by_id_when_scores_equal():
     )
     r = M.match_persona(config, "build a widget")
     assert r.best.id == "aaa"  # equal score + weight -> id ascending
+
+
+# ---- matching boundaries (whole-word, adjacency, case) --------------------- #
+
+
+def _one(pid: str, keywords: list[str], domain: str = "isolated-domain-vocab") -> R.PersonasConfig:
+    """A single-persona config for asserting one matching rule in isolation."""
+    return R.from_mapping({"persona": [{"id": pid, "domain": domain, "match_keywords": keywords}]})
+
+
+def test_keyword_matches_whole_word_only():
+    # "api" must not fire inside "therapist" or "rapidly" — substring matching would.
+    config = _one("api-persona", ["api"])
+    r = M.match_persona(config, "the therapist rapidly reviewed the design")
+    assert r.is_fallback
+
+
+def test_keyword_fires_on_a_standalone_word():
+    config = _one("api-persona", ["api"])
+    r = M.match_persona(config, "design the public api surface")
+    assert r.best.id == "api-persona"
+    assert not r.is_fallback
+
+
+def test_multi_word_keyword_requires_adjacency():
+    # The phrase keyword "load balancer" fires only when the words are adjacent, in order.
+    config = _one("infra", ["load balancer"])
+    assert M.match_persona(config, "configure the load balancer").best.id == "infra"
+    # Words present but neither adjacent nor forming the phrase -> no match.
+    assert M.match_persona(config, "balance the heavy server load").is_fallback
+
+
+def test_keyword_match_is_case_insensitive():
+    # The registry lowercases keywords on load; normalize() lowercases the task.
+    config = _one("p", ["API"])
+    assert config.get("p").match_keywords == ("api",)
+    r = M.match_persona(config, "Design the public API Surface")
+    assert r.best.id == "p"
+
+
+def test_whitespace_only_task_is_fallback():
+    r = M.match_persona(cfg(), "   \t  \n ")
+    assert r.is_fallback
+
+
+# ---- empty-roster boundary ------------------------------------------------- #
+
+
+def test_match_empty_roster_raises_clear_error():
+    empty = R.PersonasConfig(personas=(), cache=R.CachePolicy())
+    try:
+        M.match_persona(empty, "anything")
+    except ValueError as e:
+        assert "empty persona roster" in str(e)
+    else:
+        raise AssertionError("expected ValueError on an empty roster")
+
+
+def test_equip_empty_roster_raises_clear_error():
+    empty = R.PersonasConfig(personas=(), cache=R.CachePolicy())
+    try:
+        M.equip(empty, "anything")
+    except ValueError as e:
+        assert "empty persona roster" in str(e)
+    else:
+        raise AssertionError("expected ValueError on an empty roster")
+
+
+# ---- overlay / materialize ------------------------------------------------- #
+
+
+def _backend(config: R.PersonasConfig) -> R.Persona:
+    return config.get("principal-backend-engineer")
+
+
+def test_render_overlay_includes_persona_essentials():
+    p = _backend(cfg())
+    md = M.render_overlay(p)
+    assert f"# Equipped persona: {p.title}" in md
+    assert p.domain in md
+    assert p.playbook in md
+    assert "**Verification bar" in md and p.verification_bar in md
+    assert "**Skills to lean on:**" in md
+    assert "**Tools:**" in md
+
+
+def test_render_overlay_reports_matched_terms():
+    config = cfg()
+    result = M.match_persona(config, "audit the upload handler for sql injection")
+    md = M.render_overlay(result.best, result)
+    assert "Matched on:" in md
+    assert "score" in md
+    # Every reported term should be named in the provenance line.
+    for term in result.matched:
+        assert term in md
+
+
+def test_render_overlay_marks_fallback():
+    config = cfg()
+    result = M.match_persona(config, "do the thing with the stuff")
+    assert result.is_fallback
+    md = M.render_overlay(result.best, result)
+    assert "No strong task match" in md
+    assert "default" in md
+
+
+def test_render_overlay_without_result_has_no_provenance():
+    md = M.render_overlay(_backend(cfg()))
+    assert "Matched on:" not in md
+    assert "No strong task match" not in md
+
+
+def test_render_overlay_omits_empty_sections_for_lean_persona():
+    lean = R.Persona(
+        id="lean-persona",
+        domain="",
+        when_to_equip="",
+        verification_bar="",
+        playbook="",
+        match_keywords=(),
+        skills=(),
+        tools=(),
+    )
+    md = M.render_overlay(lean)
+    assert md.startswith("# Equipped persona: Lean Persona")
+    # Nothing to say beyond the heading — no empty section labels.
+    assert "**Domain.**" not in md
+    assert "**Playbook.**" not in md
+    assert "**Skills to lean on:**" not in md
+    assert "**Tools:**" not in md
+    assert "**Verification bar" not in md
+
+
+def test_render_overlay_ends_with_single_newline():
+    md = M.render_overlay(_backend(cfg()))
+    assert md.endswith("\n")
+    assert not md.endswith("\n\n")
+
+
+def test_render_overlay_is_deterministic():
+    p = _backend(cfg())
+    assert M.render_overlay(p) == M.render_overlay(p)
+
+
+# ---- equip (select + overlay) ---------------------------------------------- #
+
+
+def test_equip_selects_persona_and_materializes_overlay():
+    e = M.equip(cfg(), "implement a REST endpoint backed by Postgres with idempotent writes")
+    assert e.persona.id == "principal-backend-engineer"
+    assert not e.is_fallback
+    assert e.overlay.strip()  # non-empty overlay
+    assert f"# Equipped persona: {e.persona.title}" in e.overlay
+
+
+def test_equip_overlay_matches_render_overlay():
+    e = M.equip(cfg(), "audit the auth flow for sql injection vulnerabilities")
+    assert e.overlay == M.render_overlay(e.result.best, e.result)
+
+
+def test_equip_result_agrees_with_match_persona():
+    config = cfg()
+    task = "build an accessible React modal component with keyboard focus"
+    e = M.equip(config, task)
+    direct = M.match_persona(config, task)
+    assert e.result.best.id == direct.best.id
+    assert e.result.score == direct.score
+
+
+def test_equip_falls_back_when_no_signal():
+    e = M.equip(cfg(), "do the thing with the stuff")
+    assert e.is_fallback
+    assert e.persona.id == cfg().default_persona_id
+    assert "No strong task match" in e.overlay
