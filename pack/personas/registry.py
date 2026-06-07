@@ -13,7 +13,9 @@ mirroring how ``model-advisor`` degrades to a built-in roster.
 
 from __future__ import annotations
 
+import math
 import os
+import re
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
@@ -25,6 +27,12 @@ except ModuleNotFoundError:  # pragma: no cover - only on < 3.11 via the tomli b
 
 class RegistryError(ValueError):
     """Raised when ``personas.toml`` is missing required structure or is invalid."""
+
+
+#: A persona ``id`` is a stable, kebab-case handle: the warm cache keys on it, the CLI
+#: shows/looks-up by it, and the equip hook overlays by it. Lowercase alphanumerics in
+#: hyphen-separated groups — no leading/trailing/doubled hyphens, no spaces or uppercase.
+_VALID_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 
 # --------------------------------------------------------------------------- #
@@ -192,6 +200,61 @@ def load_config(path: str | os.PathLike[str] | None = None) -> PersonasConfig:
     return from_mapping(raw)
 
 
+def default_registry_path() -> str:
+    """Absolute path to the roster shipped with the pack (``<pack>/personas.toml``).
+
+    The one canonical answer to "where is the registry": the equip/match engine, the
+    warm cache, the CLI, and the equip-on-task-pickup hook all resolve the shipped
+    roster through here (or :func:`load_default`) instead of each re-deriving the path.
+    """
+    pack_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(pack_root, "personas.toml")
+
+
+def load_default() -> PersonasConfig:
+    """Load the roster shipped with the pack — the registry every consumer starts from.
+
+    Equivalent to ``load_config(default_registry_path())``; degrades to
+    :func:`default_config` (the built-in roster) if the shipped file is missing, so a
+    caller always gets a usable registry.
+    """
+    return load_config(default_registry_path())
+
+
+#: Text fields whose absence makes a persona *semantically* incomplete (as opposed to
+#: structurally invalid, which loading rejects outright). Kept as data so the integrity
+#: lint below reads as one obvious rule.
+_REQUIRED_TEXT = ("domain", "when_to_equip", "verification_bar", "playbook")
+
+
+def validate(config: PersonasConfig) -> list[str]:
+    """Return registry *integrity* issues (empty list == healthy).
+
+    Loading already rejects anything structurally invalid — a missing/duplicate/
+    malformed ``id``, an unknown ``default_persona``, a bad ``weight``, a broken cache
+    policy. This is the complementary *semantic-completeness* check the foundation
+    exposes so the CLI (e.g. a ``personas lint``), the equip hook, and tests can assert
+    every persona is actually usable: it has a domain, a playbook, a verification bar,
+    signal to match on, and the skills/tools it brings.
+
+    It returns human-readable strings rather than raising, so a caller can warn and keep
+    going — the engine still runs on an incomplete persona, it just routes and overlays
+    less well.
+    """
+    issues: list[str] = []
+    for p in config.personas:
+        for field in _REQUIRED_TEXT:
+            if not getattr(p, field):
+                issues.append(f"{p.id}: missing {field}")
+        if not p.match_keywords:
+            issues.append(f"{p.id}: no match_keywords (cannot be matched by keyword)")
+        if not p.skills:
+            issues.append(f"{p.id}: brings no skills")
+        if not p.tools:
+            issues.append(f"{p.id}: brings no tools")
+    return issues
+
+
 def from_mapping(raw: Mapping[str, object]) -> PersonasConfig:
     """Build a :class:`PersonasConfig` from a parsed-TOML mapping.
 
@@ -257,6 +320,43 @@ def _str_list(value: object, what: str) -> tuple[str, ...]:
     return tuple(str(v) for v in value)
 
 
+def _clean_terms(values: tuple[str, ...], *, lower: bool) -> tuple[str, ...]:
+    """Trim, drop blanks, and de-duplicate a term list, preserving first-seen order.
+
+    Hands the match engine clean signal: keywords are lowercased (and compared
+    lowercased for dedup) so ``"API"``/``"api"`` collapse to one; skills/tools keep
+    their case (``"Read"``) but still trim and dedup. A term that is empty or all
+    whitespace is dropped rather than smuggled through as a phantom keyword.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for v in values:
+        term = v.strip().lower() if lower else v.strip()
+        if not term or term in seen:
+            continue
+        seen.add(term)
+        out.append(term)
+    return tuple(out)
+
+
+def _parse_weight(pid: str, raw: object) -> float:
+    """Parse a persona ``weight``: a finite number > 0 (it feeds the match tie-break).
+
+    The equip engine orders ties by ``(score, weight, id)``. A NaN weight makes that
+    sort order undefined, and a non-positive weight inverts the intended priority — so
+    both are rejected here, at the boundary, rather than corrupting routing later.
+    """
+    try:
+        weight = float(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise RegistryError(f"persona {pid!r} weight must be a number, got {raw!r}")
+    if not math.isfinite(weight) or weight <= 0:
+        raise RegistryError(
+            f"persona {pid!r} weight must be a finite number > 0, got {weight!r}"
+        )
+    return weight
+
+
 def _parse_personas(value: object) -> list[Persona]:
     rows = _as_list_of_tables(value, "persona")
     if not rows:
@@ -265,7 +365,13 @@ def _parse_personas(value: object) -> list[Persona]:
     for i, r in enumerate(rows):
         if "id" not in r:
             raise RegistryError(f"[[persona]] #{i} missing 'id'")
-        pid = str(r["id"])
+        pid = str(r["id"]).strip()
+        if not _VALID_ID.match(pid):
+            raise RegistryError(
+                f"[[persona]] #{i} id {str(r['id'])!r} is not a valid kebab-case id "
+                "(lowercase alphanumerics in hyphen-separated groups, e.g. "
+                "'principal-backend-engineer')"
+            )
         personas.append(
             Persona(
                 id=pid,
@@ -273,12 +379,13 @@ def _parse_personas(value: object) -> list[Persona]:
                 when_to_equip=str(r.get("when_to_equip", "")),
                 verification_bar=str(r.get("verification_bar", "")),
                 playbook=str(r.get("playbook", "")).strip(),
-                match_keywords=tuple(
-                    k.lower() for k in _str_list(r.get("match_keywords"), f"persona {pid!r} match_keywords")
+                match_keywords=_clean_terms(
+                    _str_list(r.get("match_keywords"), f"persona {pid!r} match_keywords"),
+                    lower=True,
                 ),
-                skills=_str_list(r.get("skills"), f"persona {pid!r} skills"),
-                tools=_str_list(r.get("tools"), f"persona {pid!r} tools"),
-                weight=float(r.get("weight", 1.0)),
+                skills=_clean_terms(_str_list(r.get("skills"), f"persona {pid!r} skills"), lower=False),
+                tools=_clean_terms(_str_list(r.get("tools"), f"persona {pid!r} tools"), lower=False),
+                weight=_parse_weight(pid, r.get("weight", 1.0)),
             )
         )
     return personas

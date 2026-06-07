@@ -147,3 +147,119 @@ def test_persona_missing_id_rejected():
 def test_match_keywords_must_be_array():
     with pytest.raises(R.RegistryError):
         R.from_mapping({"persona": [{"id": "a", "match_keywords": "backend"}]})
+
+
+# ---- id validation --------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("bad", ["", "   ", "Has Space", "UPPER", "trailing-", "-leading", "a--b", "a_b"])
+def test_invalid_id_rejected(bad):
+    with pytest.raises(R.RegistryError):
+        R.from_mapping({"persona": [{"id": bad}]})
+
+
+def test_id_is_stripped_of_surrounding_whitespace():
+    cfg = R.from_mapping({"persona": [{"id": "  principal-x  ", "domain": "d"}]})
+    assert cfg.ids == ("principal-x",)
+
+
+@pytest.mark.parametrize("ok", ["a", "p", "dup", "v2", "principal-backend-engineer"])
+def test_valid_ids_accepted(ok):
+    cfg = R.from_mapping({"persona": [{"id": ok}]})
+    assert cfg.ids == (ok,)
+
+
+# ---- weight validation ----------------------------------------------------- #
+
+
+@pytest.mark.parametrize("bad", [0, -1, float("nan"), float("inf"), float("-inf"), "abc"])
+def test_bad_weight_rejected(bad):
+    with pytest.raises(R.RegistryError):
+        R.from_mapping({"persona": [{"id": "p", "weight": bad}]})
+
+
+def test_weight_defaults_to_one():
+    cfg = R.from_mapping({"persona": [{"id": "p"}]})
+    assert cfg.get("p").weight == 1.0
+
+
+def test_valid_weight_parsed():
+    cfg = R.from_mapping({"persona": [{"id": "p", "weight": 2.5}]})
+    assert cfg.get("p").weight == 2.5
+
+
+# ---- term hygiene (keywords / skills / tools) ------------------------------ #
+
+
+def test_keywords_trimmed_deduped_and_lowercased():
+    cfg = R.from_mapping(
+        {"persona": [{"id": "p", "match_keywords": [" API ", "api", "Api", "", "  ", "rest"]}]}
+    )
+    # "API"/"api"/"Api" collapse to one; blanks dropped; first-seen order kept.
+    assert cfg.get("p").match_keywords == ("api", "rest")
+
+
+def test_skills_and_tools_trimmed_and_deduped_case_sensitively():
+    cfg = R.from_mapping(
+        {"persona": [{"id": "p", "skills": [" tdd ", "tdd", ""], "tools": ["Read", "Read", " Edit "]}]}
+    )
+    assert cfg.get("p").skills == ("tdd",)
+    assert cfg.get("p").tools == ("Read", "Edit")
+
+
+# ---- canonical loader (default_registry_path / load_default) ---------------- #
+
+
+def test_default_registry_path_points_at_shipped_file():
+    path = R.default_registry_path()
+    assert path == _SHIPPED
+    assert os.path.exists(path)
+
+
+def test_load_default_loads_the_shipped_roster():
+    config = R.load_default()
+    assert set(config.ids) == EXPECTED_IDS
+    assert config.default_persona.id == "principal-backend-engineer"
+
+
+# ---- integrity lint (validate) --------------------------------------------- #
+
+
+def test_shipped_registry_passes_validate():
+    assert R.validate(R.load_default()) == []
+
+
+def test_builtin_default_config_passes_validate():
+    # The fallback roster must itself be complete — it ships when personas.toml is gone.
+    assert R.validate(R.default_config()) == []
+
+
+def test_validate_flags_an_incomplete_persona():
+    cfg = R.from_mapping({"persona": [{"id": "bare"}]})
+    issues = R.validate(cfg)
+    joined = "\n".join(issues)
+    for field in ("domain", "when_to_equip", "verification_bar", "playbook"):
+        assert f"bare: missing {field}" in joined
+    assert any("match_keywords" in i for i in issues)
+    assert any("skills" in i for i in issues)
+    assert any("tools" in i for i in issues)
+
+
+def test_validate_clean_persona_has_no_issues():
+    cfg = R.from_mapping(
+        {
+            "persona": [
+                {
+                    "id": "complete-one",
+                    "domain": "d",
+                    "when_to_equip": "w",
+                    "verification_bar": "v",
+                    "playbook": "p",
+                    "match_keywords": ["k"],
+                    "skills": ["tdd"],
+                    "tools": ["Read"],
+                }
+            ]
+        }
+    )
+    assert R.validate(cfg) == []

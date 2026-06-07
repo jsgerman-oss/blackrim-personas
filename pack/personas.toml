@@ -15,7 +15,8 @@
 #   tools            tools it expects to use
 #   verification_bar the bar it holds its own work to before handing off
 #   playbook         the principal-engineer mindset + method for this domain
-#   weight           optional priority used ONLY as a deterministic tie-break
+#   weight           optional priority (a finite number > 0) used ONLY as a
+#                    deterministic tie-break between personas with equal match scores
 
 [registry]
 # Equipped when a task matches nothing (the generalist fallback).
