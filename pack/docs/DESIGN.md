@@ -1,10 +1,11 @@
 # personas — design
 
 This is the v0 scaffold of the dynamic persona system described in the repository
-[`README.md`](../../README.md). It implements the five deliverables that README calls
-for — a persona **registry**, an **equip/match** engine, a **warm-cache + TTL**
-lifecycle, a gas-town **equip-on-task-pickup hook**, and the **pack skeleton** — as a
-pure-stdlib gas-city pack mirroring the `gascity-cockpit` / `model-advisor` conventions.
+[`README.md`](../../README.md). It implements the deliverables that README calls for — a
+persona **registry**, an **equip/match** engine, a **warm-cache + TTL** lifecycle, a
+gas-town **equip-on-task-pickup hook**, a **CLI** for inspecting all three, and the
+**pack skeleton** that carries them — as a pure-stdlib gas-city pack mirroring the
+`gascity-cockpit` / `model-advisor` conventions.
 
 It composes with the rest of the blackrim toolchain rather than competing with it:
 `model-advisor` picks the model **tier**, `provider-forge` picks the **provider/model**,
@@ -146,6 +147,46 @@ Standard gas-city pack layout (mirrors `gascity-cockpit/pack` + `model-advisor`)
 the overlay + hook, `setup.sh` / `install.sh` / `uninstall.sh` (idempotent, backed-up,
 `--dry-run`), `requirements.txt`, `tests/`, and this doc. Stdlib-only; no runtime
 third-party deps.
+
+## 6. CLI (`bin/personas` + `personas/cli.py`)
+
+The README's sixth pack component: "a CLI for inspecting the registry, the warm cache, and
+the equip decisions." It is the operator surface over the three engine layers — one
+command group per layer — and adds no logic of its own: every command is a thin render over
+`registry` / `match` / `cache`, so the CLI and the equip hook always make the same decision.
+
+| Layer | Commands | What they show / do |
+|-------|----------|---------------------|
+| registry | `list`, `show <id>`, `lint` | the roster; one persona's full playbook + bar; an integrity check |
+| equip decision | `match <task…>`, `equip <task…>` | preview the decision (read-only) vs. materialize it |
+| warm cache | `cache`, `evict <id>`, `sweep [--all]` | what's warm + TTL remaining; drop one; age out expired / all |
+
+**Reads vs. writes.** `list` / `show` / `lint` / `match` / `cache` are pure reads; `equip`
+/ `evict` / `sweep` mutate the shared warm cache. `cache` lazily prunes expired entries as
+it reports (the same lazy eviction the engine does on every `equip`), so even a read
+self-heals an aged cache — but it never materializes a persona.
+
+**One way to name a task.** `match` and `equip` share a task resolver: positional words, or
+`--from-bead ID` (the bead's title + description, read via `bd show`). `match --from-bead`
+is the read-only preview — "what would this bead equip, and why?" — with no cache write;
+`equip --from-bead` is what the equip-on-task-pickup hook (§4) runs. The `bd` subprocess is
+isolated in one helper so the engine stays subprocess-free and tests monkeypatch it.
+
+**`lint` closes the registry-edit loop.** Loading rejects *structural* errors (a bad or
+duplicate `id`, an unknown default, a broken cache policy) outright; `lint` adds the
+*completeness* pass `registry.validate` exposes — a persona missing a domain, playbook,
+verification bar, match keywords, or skills/tools loads but routes and overlays less well.
+So editing `personas.toml` has a check a CI step or pre-commit hook can gate on.
+
+**`evict` vs. `sweep`.** `sweep` ages the cache by policy (expired entries) and `sweep
+--all` clears it; `evict <id>` is the targeted drop — force one persona to re-materialize
+(e.g. after editing its definition) without disturbing the rest. It is idempotent: evicting
+a cold persona is a no-op, not an error.
+
+**Exit codes.** `0` ok; `1` `lint` found integrity issues (so it gates); `2` a usage or
+resolution error (unknown persona id, an invalid registry, a `--from-bead` that won't
+resolve). Every command also takes `--json` for scripting. The engine is pure stdlib;
+`bin/personas` runs it under the pack venv or any system `python3` (§5).
 
 ## Open scope (not built in v0)
 

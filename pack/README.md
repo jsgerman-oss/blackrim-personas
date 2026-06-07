@@ -16,7 +16,7 @@ the *provider/model*, and **personas** picks the *role*.
 
 | Path | Role |
 |------|------|
-| `bin/personas` | the `list` / `show` / `match` / `equip` / `cache` / `sweep` CLI |
+| `bin/personas` | the `list` / `show` / `lint` / `match` / `equip` / `cache` / `evict` / `sweep` CLI |
 | `personas/` | the engine (registry loader + match rule + warm-cache lifecycle) |
 | `personas.toml` | the roster (10 principal-engineer personas) + warm-cache TTL policy |
 | `hooks/equip-on-task-pickup.sh` | the gas-town SessionStart equip hook |
@@ -34,11 +34,13 @@ Stdlib-only (`tomllib` ≥3.11 / `tomli` fallback). No runtime third-party deps 
 # (optional) build the engine venv; bin/personas also runs under any system python3
 ./setup.sh
 
-# 1. The roster
+# 1. The roster — and check it's complete after an edit
 ./bin/personas list
+./bin/personas lint             # registry integrity check (exit 1 if issues)
 
 # 2. The equip decision for a task (read-only; shows score + why)
 ./bin/personas match "implement a paginated REST endpoint backed by Postgres"
+./bin/personas match --from-bead pers-0fs   # preview a bead's decision (read-only)
 
 # 3. Equip it — materializes the persona into the shared warm cache
 ./bin/personas equip "audit the upload handler for SSRF"
@@ -48,11 +50,13 @@ Stdlib-only (`tomllib` ≥3.11 / `tomli` fallback). No runtime third-party deps 
 
 # 5. The warm cache (what's materialized + TTL remaining) / age it out
 ./bin/personas cache
+./bin/personas evict principal-backend-engineer   # drop one persona now
 ./bin/personas sweep            # evict expired   (--all clears everything)
 ```
 
-`list` / `show` / `match` / `cache` are pure reads; `equip` and `sweep` mutate the shared
-warm cache. `equip --from-bead <id>` pulls the task text from a work bead; `equip
+`list` / `show` / `lint` / `match` / `cache` are pure reads; `equip` / `evict` / `sweep`
+mutate the shared warm cache. `match` and `equip` take `--from-bead <id>` to pull the task
+text from a work bead (`match` previews the decision, `equip` materializes it); `equip
 --emit-context` prints a Claude Code SessionStart hook payload (used by the equip hook).
 
 ## The roster
@@ -77,7 +81,8 @@ so the next agent reuses them. The aging policy (configurable in `personas.toml`
 - **Absolute ceiling: 2 h**, so even a continuously-reused persona re-reads the registry.
 
 Eviction is lazy (every `equip` / `cache` sweeps expired entries) plus the explicit
-`sweep`. See [`docs/DESIGN.md`](docs/DESIGN.md) §3 for the reasoning.
+`sweep` (expired, by policy) and `evict <id>` (one persona, on demand). See
+[`docs/DESIGN.md`](docs/DESIGN.md) §3 for the TTL reasoning and §6 for the CLI.
 
 ## Install into a city
 
@@ -98,7 +103,7 @@ drops the venv).
 ## Tests
 
 ```bash
-python3 -m pytest -q        # 77 tests, pure stdlib + pytest, no network
+python3 -m pytest -q        # 171 tests, pure stdlib + pytest, no network
 ```
 
 ## License

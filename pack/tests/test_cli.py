@@ -1,9 +1,11 @@
-"""personas — CLI surface tests (list / show / match / equip / cache / sweep).
+"""personas — CLI surface tests (list / show / lint / match / equip / cache / evict / sweep).
 
-Owns the CLI contract and its exit codes: reads render text + JSON; equip materializes
-into the warm cache and can emit a SessionStart hook payload; --from-bead resolves task
-text from a bead (the subprocess is monkeypatched so nothing shells out). The warm cache
-is pointed at a tmp file via --cache-file. Pure stdlib + pytest.
+Owns the CLI contract and its exit codes: reads render text + JSON; lint integrity-checks
+the registry (exit 1 on completeness gaps, 2 on a structural load error); match/equip take
+the task as words or --from-bead (the subprocess is monkeypatched so nothing shells out)
+with match staying read-only; equip materializes into the warm cache and can emit a
+SessionStart hook payload; evict dematerializes one persona. The warm cache is pointed at a
+tmp file via --cache-file. Pure stdlib + pytest.
 """
 
 from __future__ import annotations
@@ -77,6 +79,53 @@ def test_show_unknown_persona_exits_2():
     assert rc == 2
 
 
+# ---- lint ------------------------------------------------------------------ #
+
+
+def test_lint_shipped_roster_is_clean():
+    rc, s = run(["lint"])
+    assert rc == 0
+    assert "no integrity issues" in s
+
+
+def test_lint_json_reports_ok():
+    rc, s = run(["lint", "--json"])
+    assert rc == 0
+    data = json.loads(s)
+    assert data["ok"] is True
+    assert data["persona_count"] == 10
+    assert data["issue_count"] == 0
+    assert data["issues"] == []
+
+
+def test_lint_flags_incomplete_roster_exits_1(tmp_path):
+    bad = tmp_path / "bare.toml"
+    bad.write_text('[[persona]]\nid = "bare"\n')
+    rc, s = run(["--registry", str(bad), "lint"])
+    assert rc == 1  # completeness gaps are exit 1, distinct from a load error (2)
+    assert "bare: missing domain" in s
+
+
+def test_lint_json_flags_issues_exits_1(tmp_path):
+    bad = tmp_path / "bare.toml"
+    bad.write_text('[[persona]]\nid = "bare"\n')
+    rc, s = run(["--registry", str(bad), "lint", "--json"])
+    assert rc == 1
+    data = json.loads(s)
+    assert data["ok"] is False
+    assert data["issue_count"] > 0
+    assert any("bare" in issue for issue in data["issues"])
+
+
+def test_lint_structural_error_exits_2(tmp_path):
+    # A duplicate id is rejected at *load* (structural), so lint surfaces it as a usage
+    # error (exit 2) — not as a completeness finding (exit 1).
+    bad = tmp_path / "dup.toml"
+    bad.write_text('[[persona]]\nid = "dup"\n[[persona]]\nid = "dup"\n')
+    rc, s = run(["--registry", str(bad), "lint"])
+    assert rc == 2
+
+
 # ---- match ----------------------------------------------------------------- #
 
 
@@ -106,6 +155,37 @@ def test_match_does_not_touch_cache(cache_file):
     # match is read-only: no cache file should have been written.
     rc, s = run(["cache", "--json"], cache_file=cache_file)
     assert json.loads(s)["entries"] == []
+
+
+def test_match_from_bead(monkeypatch, cache_file):
+    monkeypatch.setattr(
+        cli, "_task_from_bead", lambda bid: "build an accessible react component"
+    )
+    rc, s = run(["match", "--from-bead", "pers-1", "--json"], cache_file=cache_file)
+    assert rc == 0
+    assert json.loads(s)["best"] == "principal-frontend-engineer"
+
+
+def test_match_from_bead_is_read_only(monkeypatch, cache_file):
+    monkeypatch.setattr(cli, "_task_from_bead", lambda bid: "audit for sql injection")
+    run(["match", "--from-bead", "pers-1"], cache_file=cache_file)
+    # match never materializes — previewing a bead's decision leaves the cache empty.
+    rc, s = run(["cache", "--json"], cache_file=cache_file)
+    assert json.loads(s)["entries"] == []
+
+
+def test_match_from_bead_failure_exits_2(monkeypatch, cache_file):
+    def boom(bid):
+        raise ValueError("no such bead")
+
+    monkeypatch.setattr(cli, "_task_from_bead", boom)
+    rc, s = run(["match", "--from-bead", "nope"], cache_file=cache_file)
+    assert rc == 2
+
+
+def test_match_empty_task_exits_2():
+    rc, s = run(["match"])
+    assert rc == 2
 
 
 # ---- equip ----------------------------------------------------------------- #
@@ -196,7 +276,7 @@ def test_equip_from_bead_failure_exits_2(monkeypatch, cache_file):
     assert rc == 2
 
 
-# ---- cache + sweep --------------------------------------------------------- #
+# ---- cache + evict + sweep ------------------------------------------------- #
 
 
 def test_cache_lists_warm_personas(cache_file):
@@ -223,6 +303,42 @@ def test_cache_json_reports_materialized_payload(cache_file):
     assert entry["persona_id"] == "principal-backend-engineer"
     assert entry["materialized"] is True
     assert entry["overlay_bytes"] > 0
+
+
+def test_evict_removes_a_warm_persona(cache_file):
+    run(["equip", "implement a backend endpoint"], cache_file=cache_file)
+    rc, s = run(["evict", "principal-backend-engineer"], cache_file=cache_file)
+    assert rc == 0
+    assert "dematerialized principal-backend-engineer" in s
+    # ...and it is gone from the cache afterward.
+    rc, s = run(["cache", "--json"], cache_file=cache_file)
+    assert json.loads(s)["entries"] == []
+
+
+def test_evict_not_warm_is_noop_exit_0(cache_file):
+    rc, s = run(["evict", "principal-backend-engineer"], cache_file=cache_file)
+    assert rc == 0  # idempotent: evicting a cold persona is not an error
+    assert "not warm" in s
+
+
+def test_evict_json_is_idempotent(cache_file):
+    run(["equip", "implement a backend endpoint"], cache_file=cache_file)
+    rc, s = run(["evict", "principal-backend-engineer", "--json"], cache_file=cache_file)
+    assert rc == 0
+    assert json.loads(s) == {"persona_id": "principal-backend-engineer", "evicted": True}
+    # A second evict reports evicted=False — the row is already gone.
+    rc, s = run(["evict", "principal-backend-engineer", "--json"], cache_file=cache_file)
+    assert json.loads(s)["evicted"] is False
+
+
+def test_evict_leaves_other_warm_personas(cache_file):
+    # Targeted eviction drops only the named persona, unlike sweep --all.
+    run(["equip", "implement a backend endpoint"], cache_file=cache_file)
+    run(["equip", "write some tests"], cache_file=cache_file)
+    run(["evict", "principal-backend-engineer"], cache_file=cache_file)
+    rc, s = run(["cache", "--json"], cache_file=cache_file)
+    ids = [e["persona_id"] for e in json.loads(s)["entries"]]
+    assert ids == ["principal-test-engineer"]
 
 
 def test_sweep_all_clears(cache_file):

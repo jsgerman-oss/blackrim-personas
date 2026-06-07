@@ -18,7 +18,7 @@ personas equip "<task description>"    # equip it + keep it warm for the next ag
 personas show <persona-id>             # the full playbook + verification bar
 ```
 
-`personas` is pure-stdlib and read-only on `list`/`show`/`match`/`cache`; `equip`
+`personas` is pure-stdlib and read-only on `list`/`show`/`lint`/`match`/`cache`; `equip`
 materializes the persona into a shared warm cache so the next agent that needs the same
 role reuses it without paying the materialize cost. Equipped personas age out on a
 sliding 30-minute idle TTL (2-hour absolute ceiling), both configurable.

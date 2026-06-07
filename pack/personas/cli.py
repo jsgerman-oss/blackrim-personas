@@ -2,20 +2,28 @@
 
     personas list                       the roster (id, domain, when to equip)
     personas show <id>                  one persona's full definition + playbook
+    personas lint                       registry integrity check (exit 1 if issues)
     personas match <task...>            the equip decision for a task (read-only)
+        [--from-bead ID]
     personas equip <task...>            match + materialize into the warm cache
         [--from-bead ID] [--emit-context]
     personas cache                      the warm cache: what's materialized + TTL
+    personas evict <id>                 dematerialize one persona from the warm cache
     personas sweep [--all]              evict expired (or all) warm personas
 
-``list`` / ``show`` / ``match`` / ``cache`` are pure reads (``cache`` lazily prunes
-expired entries — a no-op on a fresh cache). ``equip`` and ``sweep`` mutate the warm
-cache. ``equip --emit-context`` prints a Claude Code SessionStart hook payload so the
-equip-on-task-pickup hook can overlay the persona onto the agent.
+The CLI is the inspection surface over the three engine layers: the **registry**
+(``list`` / ``show`` / ``lint``), the **equip decision** (``match`` / ``equip``), and the
+**warm cache** (``cache`` / ``evict`` / ``sweep``). ``list`` / ``show`` / ``lint`` /
+``match`` / ``cache`` are pure reads (``cache`` lazily prunes expired entries — a no-op on
+a fresh cache); ``equip`` / ``evict`` / ``sweep`` mutate the warm cache. ``match`` and
+``equip`` take the task as positional words or ``--from-bead ID`` (resolved from a work
+bead's title + description) — ``match`` previews the decision without materializing,
+``equip`` materializes it into the cache. ``equip --emit-context`` prints a Claude Code
+SessionStart hook payload so the equip-on-task-pickup hook can overlay the persona.
 
-Exit codes: 0 ok; 2 a usage / resolution error (unknown persona id, ``--from-bead``
-could not resolve a task). Pure stdlib; invoked as ``python -m personas.cli`` by the
-``bin/personas`` wrapper.
+Exit codes: 0 ok; 1 ``lint`` found registry integrity issues; 2 a usage / resolution
+error (unknown persona id, invalid registry, ``--from-bead`` could not resolve a task).
+Pure stdlib; invoked as ``python -m personas.cli`` by the ``bin/personas`` wrapper.
 """
 
 from __future__ import annotations
@@ -136,6 +144,31 @@ def _task_from_bead(bead_id: str) -> str:
     return text
 
 
+def _resolve_task(args: argparse.Namespace, label: str) -> Optional[str]:
+    """Resolve the task text for a match/equip command, or ``None`` on a usage error.
+
+    Shared by :func:`cmd_match` and :func:`cmd_equip` so the two commands accept a task
+    the same way: ``--from-bead ID`` (pulled from the bead's title + description) takes
+    precedence over the positional words. On any failure — an unresolvable bead or an
+    empty task — it writes a ``personas <label>: …`` message to stderr and returns
+    ``None``, so the caller returns exit code 2 without duplicating the error handling.
+    """
+    if getattr(args, "from_bead", None):
+        try:
+            task = _task_from_bead(args.from_bead)
+        except ValueError as e:
+            sys.stderr.write(f"personas {label}: {e}\n")
+            return None
+    else:
+        task = " ".join(args.task)
+    if not task.strip():
+        sys.stderr.write(
+            f"personas {label}: empty task (give a description or --from-bead ID)\n"
+        )
+        return None
+    return task
+
+
 # --------------------------------------------------------------------------- #
 # commands                                                                       #
 # --------------------------------------------------------------------------- #
@@ -175,9 +208,56 @@ def cmd_show(args: argparse.Namespace, out) -> int:
     return 0
 
 
+def cmd_lint(args: argparse.Namespace, out) -> int:
+    """Integrity-check the registry: every persona is *semantically* complete.
+
+    Loading the registry already rejects anything structurally invalid (a bad/duplicate
+    id, an unknown default, a broken cache policy) with exit 2. This is the complementary
+    completeness pass over a roster that loaded: :func:`personas.registry.validate` flags a
+    persona missing the fields that make it usable — a domain, playbook, verification bar,
+    keywords to match on, and the skills/tools it brings. It is the seam the registry
+    foundation exposed for exactly this command, so editing ``personas.toml`` has a check.
+
+    Exit 0 when the roster is clean, 1 when integrity issues are found (so a CI step or a
+    pre-commit hook can gate on a roster edit), 2 if the registry itself won't load.
+    """
+    config = _load(args)
+    issues = R.validate(config)
+    rc = 0 if not issues else 1
+    if args.json:
+        out.write(
+            json.dumps(
+                {
+                    "ok": not issues,
+                    "persona_count": len(config.personas),
+                    "issue_count": len(issues),
+                    "issues": issues,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        return rc
+    n = len(config.personas)
+    if not issues:
+        out.write(f"registry ok: {n} persona{'' if n == 1 else 's'}, no integrity issues\n")
+        return rc
+    out.write(f"registry has {len(issues)} integrity issue{'' if len(issues) == 1 else 's'} "
+              f"across {n} persona{'' if n == 1 else 's'}:\n\n")
+    for issue in issues:
+        out.write(f"  - {issue}\n")
+    out.write(
+        "\n(structural errors are rejected at load with exit 2; these are completeness "
+        "gaps — a persona that loads but routes/overlays less well)\n"
+    )
+    return rc
+
+
 def cmd_match(args: argparse.Namespace, out) -> int:
     config = _load(args)
-    task = " ".join(args.task)
+    task = _resolve_task(args, "match")
+    if task is None:
+        return 2
     result = M.match_persona(config, task)
     if args.json:
         out.write(json.dumps(_match_dict(result), indent=2) + "\n")
@@ -199,16 +279,8 @@ def cmd_match(args: argparse.Namespace, out) -> int:
 
 def cmd_equip(args: argparse.Namespace, out) -> int:
     config = _load(args)
-    if args.from_bead:
-        try:
-            task = _task_from_bead(args.from_bead)
-        except ValueError as e:
-            sys.stderr.write(f"personas equip: {e}\n")
-            return 2
-    else:
-        task = " ".join(args.task)
-    if not task.strip():
-        sys.stderr.write("personas equip: empty task (give a description or --from-bead ID)\n")
+    task = _resolve_task(args, "equip")
+    if task is None:
         return 2
 
     result = M.match_persona(config, task)
@@ -308,6 +380,28 @@ def cmd_cache(args: argparse.Namespace, out) -> int:
     return 0
 
 
+def cmd_evict(args: argparse.Namespace, out) -> int:
+    """Dematerialize one persona from the warm cache now, regardless of its TTL.
+
+    Targeted counterpart to ``sweep`` (evict expired) and ``sweep --all`` (clear
+    everything): drops a single ``persona_id`` so an operator can force a re-materialize
+    of one persona — e.g. after editing its definition — without disturbing the rest of
+    the warm cache. Idempotent: evicting a persona that is not warm is a no-op, not an
+    error, so it always exits 0 (mirroring ``sweep`` with nothing to evict).
+    """
+    config = _load(args)
+    cache = _cache(args, config)
+    removed = cache.evict(args.id)
+    if args.json:
+        out.write(json.dumps({"persona_id": args.id, "evicted": removed}, indent=2) + "\n")
+        return 0
+    if removed:
+        out.write(f"dematerialized {args.id} (evicted from the warm cache)\n")
+    else:
+        out.write(f"{args.id} is not warm (nothing to evict)\n")
+    return 0
+
+
 def cmd_sweep(args: argparse.Namespace, out) -> int:
     config = _load(args)
     cache = _cache(args, config)
@@ -371,8 +465,16 @@ def build_parser() -> argparse.ArgumentParser:
     ps.add_argument("--json", action="store_true", help="emit JSON")
     ps.set_defaults(func=cmd_show)
 
+    pli = sub.add_parser("lint", help="check registry integrity (exit 1 if issues found)")
+    pli.add_argument("--json", action="store_true", help="emit JSON")
+    pli.set_defaults(func=cmd_lint)
+
     pm = sub.add_parser("match", help="show the equip decision for a task (read-only)")
-    pm.add_argument("task", nargs="+", help="the task description to match")
+    pm.add_argument("task", nargs="*", help="the task description to match")
+    pm.add_argument(
+        "--from-bead", default=None, metavar="ID",
+        help="pull the task text from a bead (preview its equip decision; read-only)",
+    )
     pm.add_argument("--json", action="store_true", help="emit JSON")
     pm.set_defaults(func=cmd_match)
 
@@ -390,6 +492,11 @@ def build_parser() -> argparse.ArgumentParser:
     pc = sub.add_parser("cache", help="show the warm cache (materialized personas + TTL)")
     pc.add_argument("--json", action="store_true", help="emit JSON")
     pc.set_defaults(func=cmd_cache)
+
+    pv = sub.add_parser("evict", help="dematerialize one persona from the warm cache")
+    pv.add_argument("id", help="persona id to evict (no-op if not warm)")
+    pv.add_argument("--json", action="store_true", help="emit JSON")
+    pv.set_defaults(func=cmd_evict)
 
     pw = sub.add_parser("sweep", help="evict expired warm personas")
     pw.add_argument("--all", action="store_true", help="clear the whole warm cache")

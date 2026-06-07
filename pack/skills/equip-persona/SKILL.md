@@ -1,6 +1,6 @@
 ---
 name: equip-persona
-description: Equip a best-fit principal-engineer persona for a task, and inspect the persona registry and warm cache. Run `personas match "<task>"` to see which persona fits a task (and why), `personas equip "<task>"` to equip it and keep it warm for other agents, `personas show <id>` to read a persona's full playbook + verification bar, and `personas cache` / `personas sweep` to inspect or age out the warm cache. Use when picking up a task and you want to work at principal-engineer level in that task's domain (backend, frontend, systems, security, data, platform, api-design, test, refactoring, docs), when debugging which persona an agent equipped, or when tuning the registry or warm-cache TTL.
+description: Equip a best-fit principal-engineer persona for a task, and inspect the persona registry and warm cache. Run `personas match "<task>"` to see which persona fits a task (and why), `personas equip "<task>"` to equip it and keep it warm for other agents, `personas show <id>` to read a persona's full playbook + verification bar, `personas lint` to check the registry is complete after an edit, and `personas cache` / `personas evict <id>` / `personas sweep` to inspect or age out the warm cache. Use when picking up a task and you want to work at principal-engineer level in that task's domain (backend, frontend, systems, security, data, platform, api-design, test, refactoring, docs), when debugging which persona an agent equipped, or when tuning the registry or warm-cache TTL.
 ---
 
 # Equip Persona
@@ -18,8 +18,8 @@ It composes with the rest of the toolchain rather than competing with it: **mode
 picks the model *tier*, **provider-forge** picks the *provider/model*, and **personas**
 picks the *role*. A dispatch is a tier, a provider/model, and a persona.
 
-`bin/personas` is the read/equip/inspect CLI. `list`, `show`, `match`, and `cache` are
-pure reads; `equip` and `sweep` mutate the shared warm cache.
+`bin/personas` is the read/equip/inspect CLI. `list`, `show`, `lint`, `match`, and `cache`
+are pure reads; `equip`, `evict`, and `sweep` mutate the shared warm cache.
 
 ## When to Use
 
@@ -79,6 +79,7 @@ personas list                              # the whole roster
 
 ```bash
 personas cache                             # materialized personas + TTL remaining
+personas evict principal-backend-engineer  # dematerialize one persona now (e.g. after editing it)
 personas sweep                             # evict expired personas now
 personas sweep --all                       # clear the whole warm cache
 ```
@@ -120,8 +121,8 @@ Before relying on an equipped persona:
       back to the default, the task description was too thin or a keyword is missing.
 - [ ] You read the persona's **verification bar** (`personas show <id>`) and will hold
       your work to it before handing off.
-- [ ] If you tuned the registry, `python3 -m pytest` passes and `personas list` shows the
-      roster you expect.
+- [ ] If you tuned the registry, `personas lint` is clean (exit 0), `python3 -m pytest`
+      passes, and `personas list` shows the roster you expect.
 
 <!-- registration -->
 **Registration.** gc discovers pack skills by directory convention: a pack contributes a

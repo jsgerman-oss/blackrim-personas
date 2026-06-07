@@ -8,7 +8,7 @@
 # tier, provider-forge picks the provider/model, and personas picks the role.
 #
 # What this pack provides (all convention-discovered once the pack is imported):
-#   bin/personas                            the list / show / match / equip / cache CLI
+#   bin/personas                            list / show / lint / match / equip / cache / evict / sweep CLI
 #   personas/                               the engine (registry + match + warm-cache)
 #   personas.toml                           the roster + warm-cache TTL policy (edit me)
 #   hooks/equip-on-task-pickup.sh           the gas-town equip-on-task-pickup hook
