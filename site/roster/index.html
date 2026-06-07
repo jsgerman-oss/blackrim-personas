@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Roster / the ten personas / blackrim-personas</title>
+    <meta
+      name="description"
+      content="The ten principal-engineer personas of blackrim-personas as a connected matrix: backend, frontend, systems, security, data, platform, api-design, test, refactoring, docs. Backend is lit as the default persona."
+    />
+    <meta property="og:title" content="Roster / the ten personas / blackrim-personas" />
+    <meta property="og:description" content="Ten principal-engineer personas an agent equips by task match, with backend lit as the default." />
+    <meta property="og:type" content="website" />
+    <script>
+      (function () {
+        try {
+          var q = new URLSearchParams(location.search).get('theme');
+          var stored = localStorage.getItem('personas-theme');
+          var pref = q === 'light' || q === 'dark' ? q : stored;
+          var dark = pref ? pref === 'dark' : true;
+          var r = document.documentElement;
+          r.classList.remove('dark', 'light');
+          r.classList.add(dark ? 'dark' : 'light');
+          r.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="nav" aria-label="Primary">
+      <div class="shell nav-inner">
+        <a class="brand" href="../" aria-label="blackrim-personas, home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="31" height="31" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+            <path d="M8 10.5 L13.5 16 L8 21.5" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="square" />
+            <path d="M17.5 12.5 H25 M17.5 19.5 H25" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="square" />
+          </svg>
+          <span class="wordmark">blackrim<span class="wordmark-accent">-personas</span></span>
+        </a>
+
+        <nav class="nav-links" aria-label="Sections">
+          <a class="nav-link" href="./" aria-current="page">Roster</a>
+          <a class="nav-link" href="../pack/">Pack</a>
+          <a class="nav-link" href="../#lifecycle">Lifecycle</a>
+        </nav>
+
+        <div class="nav-cta">
+          <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch theme">
+            <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" stroke-linejoin="round" /></svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round" /></svg>
+          </button>
+          <a class="ghost-btn" href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M12 2A10 10 0 0 0 8.8 21.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.25-4.6-1.1-4.6-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.4 4.6-4.6 4.9.3.3.6.9.6 1.8v2.7c0 .3.2.6.7.5A10 10 0 0 0 12 2z" /></svg>
+            <span>GitHub</span>
+          </a>
+          <button class="icon-btn menu-toggle" type="button" data-menu-toggle aria-label="Menu" aria-expanded="false" aria-controls="mobile-menu">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="mobile-menu" id="mobile-menu" data-mobile-menu>
+        <a class="mobile-link" href="./">Roster</a>
+        <a class="mobile-link" href="../pack/">Pack</a>
+        <a class="mobile-link" href="../#lifecycle">Lifecycle</a>
+        <a class="mobile-link" href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">GitHub</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="page-head">
+        <div class="hero-field" aria-hidden="true"></div>
+        <div class="shell page-head-inner">
+          <p class="eyebrow">The roster</p>
+          <h1>Ten principal engineers, one muscle memory.</h1>
+          <p>
+            One connected panel, one cell per persona. Each carries the same shape: a domain, a
+            playbook, when-to-equip conditions, the skills it brings, and a verification bar. Learn one
+            and the next nine read the same. Backend stays lit as the default persona.
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="shell">
+          <div class="matrix-legend">
+            <span class="legend-item"><span class="legend-swatch is-default"></span> Default persona</span>
+            <span class="legend-item"><span class="legend-swatch"></span> Equips on match</span>
+            <span class="legend-item">Hover a persona to bring it forward; the rest recede.</span>
+          </div>
+
+          <div class="matrix" data-reveal>
+            <article class="cell" data-persona="principal-backend-engineer" data-path="default">
+              <span class="cell-label">Backend</span>
+              <span class="cell-id">principal-backend-engineer</span>
+              <p class="cell-best">Server-side services, APIs, data access, and the contracts behind them.</p>
+              <div class="cell-foot"><span class="cell-tag">Server</span><span class="cell-path">Default persona</span></div>
+            </article>
+            <article class="cell" data-persona="principal-frontend-engineer">
+              <span class="cell-label">Frontend</span>
+              <span class="cell-id">principal-frontend-engineer</span>
+              <p class="cell-best">User interfaces, client state, accessibility, and perceived performance.</p>
+              <div class="cell-foot"><span class="cell-tag">Client</span><span class="cell-path">Equip on match</span></div>
+            </article>
+            <article class="cell" data-persona="principal-systems-engineer">
+              <span class="cell-label">Systems</span>
+              <span class="cell-id">principal-systems-engineer</span>
+              <p class="cell-best">Distributed systems, concurrency, and performance under load.</p>
+              <div class="cell-foot"><span class="cell-tag">Concurrency</span><span class="cell-path">Equip on match</span></div>
+            </article>
+            <article class="cell" data-persona="principal-security-engineer">
+              <span class="cell-label">Security</span>
+              <span class="cell-id">principal-security-engineer</span>
+              <p class="cell-best">Threat modeling, untrusted input, secure defaults, and authorization.</p>
+              <div class="cell-foot"><span class="cell-tag">Security</span><span class="cell-path">Equip on match</span></div>
+            </article>
+            <article class="cell" data-persona="principal-data-engineer">
+              <span class="cell-label">Data</span>
+              <span class="cell-id">principal-data-engineer</span>
+              <p class="cell-best">Data and ML pipelines, schemas, and analytical correctness.</p>
+              <div class="cell-foot"><span class="cell-tag">Data</span><span class="cell-path">Equip on match</span></div>
+            </article>
+            <article class="cell" data-persona="principal-platform-engineer">
+              <span class="cell-label">Platform</span>
+              <span class="cell-id">principal-platform-engineer</span>
+              <p class="cell-best">Infrastructure, CI/CD, observability, and operational reliability.</p>
+              <div class="cell-foot"><span class="cell-tag">Platform</span><span class="cell-path">Equip on match</span></div>
+            </article>
+            <article class="cell" data-persona="principal-api-designer">
+              <span class="cell-label">API design</span>
+              <span class="cell-id">principal-api-designer</span>
+              <p class="cell-best">API contracts, versioning, and developer experience.</p>
+              <div class="cell-foot"><span class="cell-tag">Interfaces</span><span class="cell-path">Equip on match</span></div>
+            </article>
+            <article class="cell" data-persona="principal-test-engineer">
+              <span class="cell-label">Test</span>
+              <span class="cell-id">principal-test-engineer</span>
+              <p class="cell-best">Test strategy, coverage, and fast deterministic suites.</p>
+              <div class="cell-foot"><span class="cell-tag">Quality</span><span class="cell-path">Equip on match</span></div>
+            </article>
+            <article class="cell" data-persona="principal-refactoring-engineer">
+              <span class="cell-label">Refactoring</span>
+              <span class="cell-id">principal-refactoring-engineer</span>
+              <p class="cell-best">Simplification and code health, with behavior held constant.</p>
+              <div class="cell-foot"><span class="cell-tag">Code health</span><span class="cell-path">Equip on match</span></div>
+            </article>
+            <article class="cell" data-persona="principal-docs-engineer">
+              <span class="cell-label">Docs</span>
+              <span class="cell-id">principal-docs-engineer</span>
+              <p class="cell-best">Technical writing, READMEs, and developer-facing explanation.</p>
+              <div class="cell-foot"><span class="cell-tag">Writing</span><span class="cell-path">Equip on match</span></div>
+            </article>
+          </div>
+
+          <div class="composeband" data-reveal>
+            <span class="composeband-label">Dispatch</span>
+            <div class="composeband-flow">
+              <span>tier</span><span class="sep">&rsaquo;</span>
+              <span>provider / model</span><span class="sep">&rsaquo;</span>
+              <span class="role">role</span>
+              <span class="muted">
+                model-advisor picks the tier, provider-forge picks the provider and model, and personas
+                picks the role. This roster is the option set for that last dimension.
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section cta-section">
+        <div class="shell cta-inner">
+          <p class="eyebrow">Equip one</p>
+          <h2>Match a task, equip a persona.</h2>
+          <p>
+            Point the engine at a task or a work bead and it returns the best-fit persona, its score,
+            and the terms that fired. Equip it and the persona overlays the session for that task.
+          </p>
+          <div class="hero-cta">
+            <a class="btn-primary" href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">
+              Get it on GitHub
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="square" /></svg>
+            </a>
+            <a class="btn-ghost" href="../pack/">Read the pack</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="shell foot-inner">
+        <div class="foot-brand">
+          <a class="brand" href="../">
+            <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+              <rect x="0.5" y="0.5" width="31" height="31" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+              <path d="M8 10.5 L13.5 16 L8 21.5" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="square" />
+              <path d="M17.5 12.5 H25 M17.5 19.5 H25" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="square" />
+            </svg>
+            <span class="wordmark">blackrim<span class="wordmark-accent">-personas</span></span>
+          </a>
+          <p class="foot-tag">
+            A dynamic principal-engineer persona system for agent fleets, shipped as a stdlib-only
+            gas-city pack: <code>registry + match + warm cache + hook + CLI</code>.
+          </p>
+        </div>
+        <nav class="foot-cols" aria-label="Footer">
+          <div class="foot-col">
+            <span class="foot-col-head">Project</span>
+            <a href="./">Roster</a>
+            <a href="../pack/">Pack</a>
+            <a href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">Repository</a>
+          </div>
+          <div class="foot-col">
+            <span class="foot-col-head">Composes with</span>
+            <a href="../#lifecycle">The lifecycle</a>
+            <a href="./">The roster</a>
+            <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a>
+          </div>
+        </nav>
+      </div>
+      <div class="shell foot-base">
+        <span>Built for <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a>, on Gas City.</span>
+        <span class="dim">MIT licensed &middot; 10 personas</span>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

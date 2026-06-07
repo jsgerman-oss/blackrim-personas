@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>blackrim-personas / equip a principal engineer per task</title>
+    <meta
+      name="description"
+      content="A dynamic persona system for agent fleets. A polecat equips one of ten principal-engineer personas matched to its task at pickup, works at that level, then dematerializes. Recently used personas stay warm in a shared cache. Shipped as a stdlib-only gas-city pack."
+    />
+    <meta property="og:title" content="blackrim-personas / equip a principal engineer per task" />
+    <meta
+      property="og:description"
+      content="Ten principal-engineer personas an agent equips by task match, then releases. A warm shared cache keeps recent personas hot. A stdlib-only gas-city pack that composes with model-advisor and provider-forge."
+    />
+    <meta property="og:type" content="website" />
+    <script>
+      // Set the theme before first paint to avoid a flash. Dark is primary.
+      (function () {
+        try {
+          var q = new URLSearchParams(location.search).get('theme');
+          var stored = localStorage.getItem('personas-theme');
+          var pref = q === 'light' || q === 'dark' ? q : stored;
+          var dark = pref ? pref === 'dark' : true;
+          var r = document.documentElement;
+          r.classList.remove('dark', 'light');
+          r.classList.add(dark ? 'dark' : 'light');
+          r.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="nav" aria-label="Primary">
+      <div class="shell nav-inner">
+        <a class="brand" href="./" aria-label="blackrim-personas, home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="31" height="31" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+            <path d="M8 10.5 L13.5 16 L8 21.5" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="square" />
+            <path d="M17.5 12.5 H25 M17.5 19.5 H25" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="square" />
+          </svg>
+          <span class="wordmark">blackrim<span class="wordmark-accent">-personas</span></span>
+        </a>
+
+        <nav class="nav-links" aria-label="Sections">
+          <a class="nav-link" href="roster/">Roster</a>
+          <a class="nav-link" href="pack/">Pack</a>
+          <a class="nav-link" href="#lifecycle">Lifecycle</a>
+        </nav>
+
+        <div class="nav-cta">
+          <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch theme">
+            <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" stroke-linejoin="round" /></svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round" /></svg>
+          </button>
+          <a class="ghost-btn" href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M12 2A10 10 0 0 0 8.8 21.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.25-4.6-1.1-4.6-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.4 4.6-4.6 4.9.3.3.6.9.6 1.8v2.7c0 .3.2.6.7.5A10 10 0 0 0 12 2z" /></svg>
+            <span>GitHub</span>
+          </a>
+          <button class="icon-btn menu-toggle" type="button" data-menu-toggle aria-label="Menu" aria-expanded="false" aria-controls="mobile-menu">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="mobile-menu" id="mobile-menu" data-mobile-menu>
+        <a class="mobile-link" href="roster/">Roster</a>
+        <a class="mobile-link" href="pack/">Pack</a>
+        <a class="mobile-link" href="#lifecycle">Lifecycle</a>
+        <a class="mobile-link" href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">GitHub</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- ===================== HERO ===================== -->
+      <section class="hero">
+        <div class="hero-field" aria-hidden="true"></div>
+        <div class="shell hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Dynamic persona system</p>
+            <h1 class="hero-title">
+              Equip the right<br />
+              <span class="accent-line">principal engineer.</span>
+            </h1>
+            <p class="hero-lede">
+              blackrim-personas gives an agent fleet ten principal-engineer personas. A polecat equips
+              the one that matches its task at pickup, works at that level, then dematerializes.
+              Recently used personas stay <code>warm</code> in a shared cache, so the next agent reuses
+              one without paying to rebuild it.
+            </p>
+            <div class="hero-cta">
+              <a class="btn-primary" href="roster/">
+                See the 10 personas
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="square" /></svg>
+              </a>
+              <a class="btn-ghost" href="#lifecycle">How equip works</a>
+            </div>
+            <dl class="hero-meta">
+              <div><dt>Personas</dt><dd>10</dd></div>
+              <div><dt>Equip</dt><dd>on task pickup</dd></div>
+              <div><dt>Warm TTL</dt><dd>30m idle, 2h cap</dd></div>
+              <div><dt>License</dt><dd>MIT</dd></div>
+            </dl>
+          </div>
+
+          <div class="hero-art">
+            <div class="terminal" id="equip-terminal">
+              <div class="terminal-bar">
+                <span class="terminal-dots" aria-hidden="true">
+                  <i style="--d: var(--mac-red)"></i>
+                  <i style="--d: var(--mac-amber)"></i>
+                  <i style="--d: var(--mac-green)"></i>
+                </span>
+                <span class="terminal-title">equip &middot; task pickup</span>
+                <span class="terminal-live"><i></i> warm</span>
+              </div>
+              <pre class="terminal-body" aria-label="Persona equip transcript"><code><span class="t-line"><span class="t-prompt">$</span> <span class="t-cmd">personas match</span> <span class="t-flag">--from-bead pers-3f1</span></span>
+<span class="t-line"><span class="t-dim">  task: add a paginated REST endpoint backed by Postgres</span></span>
+<span class="t-line"><span class="t-dim">  match  </span><span class="t-name">principal-backend-engineer</span><span class="t-dim">   score </span><span class="t-ok">7.0</span></span>
+<span class="t-line"><span class="t-dim">  fired: backend, rest, endpoint, postgres</span></span>
+<span class="t-line"><span class="t-dim">  runner-up: principal-api-designer 2.0</span></span>
+<span class="t-line"> </span>
+<span class="t-line"><span class="t-prompt">$</span> <span class="t-cmd">personas equip</span> <span class="t-flag">--from-bead pers-3f1</span></span>
+<span class="t-line"><span class="t-dim">  materialize </span><span class="t-name">principal-backend-engineer</span><span class="t-dim">  </span><span class="t-warn">cold 0.4s</span></span>
+<span class="t-line"><span class="t-dim">  overlay: playbook + verification bar to session</span></span>
+<span class="t-line"><span class="t-ok">  &#9679; equipped</span><span class="t-dim">   warm 30m, shared</span></span>
+<span class="t-line"> </span>
+<span class="t-line"><span class="t-prompt">$</span> <span class="t-cmd">personas cache</span></span>
+<span class="t-line"><span class="t-name">  principal-backend-engineer</span><span class="t-dim">    warm  idle 28m  used 3x</span></span>
+<span class="t-line"><span class="t-name">  principal-security-engineer</span><span class="t-dim">   warm  idle 12m  used 1x</span></span>
+<span class="t-line"> </span>
+<span class="t-line"><span class="t-prompt">$</span> <span class="caret" aria-hidden="true"></span></span></code></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== LIFECYCLE ===================== -->
+      <section class="section" id="lifecycle">
+        <div class="shell">
+          <div class="section-head">
+            <p class="eyebrow">The lifecycle</p>
+            <h2>Materialize once, reuse while warm.</h2>
+            <p>
+              Materializing a persona is the cost: assembling its playbook, domain knowledge, and
+              skills into one equipped overlay. The warm cache pays that cost once and lets every
+              agent that needs the same persona skip it, until the persona ages out.
+            </p>
+          </div>
+          <div class="lifecycle" data-reveal="stagger" data-reveal-stagger="80">
+            <article class="stage">
+              <span class="stage-step">01</span>
+              <h3>materialize</h3>
+              <p>Assemble the persona into one equipped overlay: playbook, domain knowledge, skills, worked examples.</p>
+            </article>
+            <article class="stage">
+              <span class="stage-step">02</span>
+              <h3>execute</h3>
+              <p>The agent performs the task wearing the persona, holding its work to that verification bar.</p>
+            </article>
+            <article class="stage">
+              <span class="stage-step">03</span>
+              <h3>dematerialize</h3>
+              <p>The persona is released when the task completes. The agent is a generalist again.</p>
+            </article>
+            <article class="stage">
+              <span class="stage-step">04</span>
+              <h3>warm</h3>
+              <p>The materialized persona lingers in a shared cache so the next agent reuses it for free.</p>
+            </article>
+            <article class="stage">
+              <span class="stage-step">05</span>
+              <h3>age out</h3>
+              <p>After 30 minutes idle, or a 2 hour ceiling, it is evicted and re-materialized on demand.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== ANATOMY ===================== -->
+      <section class="section">
+        <div class="shell">
+          <div class="section-head">
+            <p class="eyebrow">What a persona is</p>
+            <h2>A role the agent wears, not a prompt it pastes.</h2>
+            <p>
+              A generalist agent is competent at everything and excellent at nothing. A persona makes
+              an agent excellent at one thing for the length of one task, then steps out of the way.
+            </p>
+          </div>
+          <div class="card-grid cols-3" data-reveal="stagger">
+            <article class="card">
+              <span class="card-kicker">The role</span>
+              <h3>A domain and a trigger</h3>
+              <p>
+                Each persona owns a territory, backend or security or data, and declares when to equip.
+                The engine scores a task and equips the best fit, the same way skills auto-fire.
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-kicker">The standard</span>
+              <h3>A playbook and a bar</h3>
+              <p>
+                Every persona carries a principal-engineer playbook and a verification bar it holds its
+                own work to before handing off. Equipping one raises the floor for that task.
+              </p>
+            </article>
+            <article class="card">
+              <span class="card-kicker">The source</span>
+              <h3>One file, no magic</h3>
+              <p>
+                The roster lives in <code>personas.toml</code>. Adding a persona is adding a block. The
+                match is curated keywords plus domain vocabulary, with a deterministic tie-break.
+              </p>
+            </article>
+          </div>
+          <p class="anatomy-note">
+            <strong>How the match works</strong>
+            The equip engine scores a task against each persona's curated keywords, where a multi-word
+            phrase counts for more, plus its domain vocabulary, then returns the winner, its score, the
+            terms that fired, and the runners-up. No model call, no network, every decision explainable.
+            With no signal at all it returns the default persona. Run <code>personas match "your task"</code> to preview any decision.
+          </p>
+        </div>
+      </section>
+
+      <!-- ===================== ROSTER PREVIEW ===================== -->
+      <section class="section">
+        <div class="shell">
+          <div class="section-head">
+            <p class="eyebrow">The roster</p>
+            <h2>Ten principal engineers, one muscle memory.</h2>
+            <p>
+              Each is an opinionated specialist with its own domain, playbook, and verification bar.
+              Backend is lit as the default, equipped when a task matches nothing else.
+            </p>
+          </div>
+          <div class="chip-wrap" data-reveal>
+            <span class="chip chip-accent">Backend</span>
+            <span class="chip">Frontend</span>
+            <span class="chip">Systems</span>
+            <span class="chip">Security</span>
+            <span class="chip">Data</span>
+            <span class="chip">Platform</span>
+            <span class="chip">API design</span>
+            <span class="chip">Test</span>
+            <span class="chip">Refactoring</span>
+            <span class="chip">Docs</span>
+          </div>
+          <div class="roster-cta">
+            <a class="btn-ghost" href="roster/">
+              Open the roster matrix
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="square" /></svg>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== COMPOSITION ===================== -->
+      <section class="section">
+        <div class="shell">
+          <div class="section-head">
+            <p class="eyebrow">Composes, does not compete</p>
+            <h2>Tier, provider, role.</h2>
+            <p>
+              personas is one of three dimensions of a dispatch. It picks the role and leaves the rest
+              to the tools built for them, so a dispatch is a tier, a provider and model, and a persona.
+            </p>
+          </div>
+          <div class="compose-trio" data-reveal="stagger">
+            <article class="compose-cell">
+              <span class="compose-dim">Tier</span>
+              <h3>model-advisor</h3>
+              <p>Picks the cheapest model tier that credibly preserves quality for the task shape.</p>
+            </article>
+            <article class="compose-cell">
+              <span class="compose-dim">Provider / model</span>
+              <h3>provider-forge</h3>
+              <p>Picks the concrete provider and model the work actually runs on.</p>
+            </article>
+            <article class="compose-cell is-role">
+              <span class="compose-dim">Role</span>
+              <h3>personas</h3>
+              <p>Picks the principal-engineer persona the agent equips for the task in front of it.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== PACK CALLOUT ===================== -->
+      <section class="section">
+        <div class="shell pack-split">
+          <div class="pack-copy">
+            <p class="eyebrow">The pack</p>
+            <h2>A gas-city pack your agents get for free.</h2>
+            <p>
+              personas ships as a stdlib-only gas-city pack: the registry, the equip and match engine,
+              the warm-cache lifecycle, an equip-on-task-pickup hook, and a CLI. Vendor it into a city
+              and every agent selects and equips a persona as it claims work.
+            </p>
+            <a class="btn-primary" href="pack/">
+              Read the pack
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="square" /></svg>
+            </a>
+          </div>
+          <div class="codeblock pack-code">
+            <div class="codeblock-head">personas</div>
+            <pre><span class="tok-comment"># the equip decision for a task (read-only)</span>
+<span class="tok-cmd">personas match</span> <span class="tok-flag">"audit the upload handler for SSRF"</span>
+
+<span class="tok-comment"># equip it: materialize into the shared warm cache</span>
+<span class="tok-cmd">personas equip</span> <span class="tok-flag">--from-bead pers-3f1</span>
+
+<span class="tok-comment"># what is warm, and how long until it ages out</span>
+<span class="tok-cmd">personas cache</span></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== CTA ===================== -->
+      <section class="section cta-section">
+        <div class="shell cta-inner">
+          <p class="eyebrow">Make every agent a specialist</p>
+          <h2>The right principal engineer, equipped on pickup.</h2>
+          <p>
+            Install the pack, let an agent claim a task, and the persona that fits the work overlays
+            its session with a playbook and a verification bar. When the task is done, it lets go.
+          </p>
+          <div class="hero-cta">
+            <a class="btn-primary" href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">
+              Get it on GitHub
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="square" /></svg>
+            </a>
+            <a class="btn-ghost" href="roster/">See the roster</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="shell foot-inner">
+        <div class="foot-brand">
+          <a class="brand" href="./">
+            <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+              <rect x="0.5" y="0.5" width="31" height="31" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+              <path d="M8 10.5 L13.5 16 L8 21.5" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="square" />
+              <path d="M17.5 12.5 H25 M17.5 19.5 H25" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="square" />
+            </svg>
+            <span class="wordmark">blackrim<span class="wordmark-accent">-personas</span></span>
+          </a>
+          <p class="foot-tag">
+            A dynamic principal-engineer persona system for agent fleets, shipped as a stdlib-only
+            gas-city pack: <code>registry + match + warm cache + hook + CLI</code>.
+          </p>
+        </div>
+        <nav class="foot-cols" aria-label="Footer">
+          <div class="foot-col">
+            <span class="foot-col-head">Project</span>
+            <a href="roster/">Roster</a>
+            <a href="pack/">Pack</a>
+            <a href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">Repository</a>
+          </div>
+          <div class="foot-col">
+            <span class="foot-col-head">Composes with</span>
+            <a href="#lifecycle">The lifecycle</a>
+            <a href="roster/">The roster</a>
+            <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a>
+          </div>
+        </nav>
+      </div>
+      <div class="shell foot-base">
+        <span>Built for <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a>, on Gas City.</span>
+        <span class="dim">MIT licensed &middot; 10 personas</span>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

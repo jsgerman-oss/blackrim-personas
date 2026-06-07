@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Pack / the gas-city pack / blackrim-personas</title>
+    <meta
+      name="description"
+      content="personas is the stdlib-only gas-city pack behind blackrim-personas: the registry, the equip and match engine, the warm-cache lifecycle, a SessionStart equip hook, and a CLI. Vendor it into a city and every agent equips a persona as it claims work."
+    />
+    <meta property="og:title" content="Pack / the gas-city pack / blackrim-personas" />
+    <meta property="og:description" content="The stdlib-only gas-city pack: registry, equip and match engine, warm-cache lifecycle, equip hook, and CLI." />
+    <meta property="og:type" content="website" />
+    <script>
+      (function () {
+        try {
+          var q = new URLSearchParams(location.search).get('theme');
+          var stored = localStorage.getItem('personas-theme');
+          var pref = q === 'light' || q === 'dark' ? q : stored;
+          var dark = pref ? pref === 'dark' : true;
+          var r = document.documentElement;
+          r.classList.remove('dark', 'light');
+          r.classList.add(dark ? 'dark' : 'light');
+          r.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) {
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="nav" aria-label="Primary">
+      <div class="shell nav-inner">
+        <a class="brand" href="../" aria-label="blackrim-personas, home">
+          <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+            <rect x="0.5" y="0.5" width="31" height="31" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+            <path d="M8 10.5 L13.5 16 L8 21.5" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="square" />
+            <path d="M17.5 12.5 H25 M17.5 19.5 H25" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="square" />
+          </svg>
+          <span class="wordmark">blackrim<span class="wordmark-accent">-personas</span></span>
+        </a>
+
+        <nav class="nav-links" aria-label="Sections">
+          <a class="nav-link" href="../roster/">Roster</a>
+          <a class="nav-link" href="./" aria-current="page">Pack</a>
+          <a class="nav-link" href="../#lifecycle">Lifecycle</a>
+        </nav>
+
+        <div class="nav-cta">
+          <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch theme">
+            <svg class="icon-moon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" stroke-linejoin="round" /></svg>
+            <svg class="icon-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke-linecap="round" /></svg>
+          </button>
+          <a class="ghost-btn" href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M12 2A10 10 0 0 0 8.8 21.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.25-4.6-1.1-4.6-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.4 4.6-4.6 4.9.3.3.6.9.6 1.8v2.7c0 .3.2.6.7.5A10 10 0 0 0 12 2z" /></svg>
+            <span>GitHub</span>
+          </a>
+          <button class="icon-btn menu-toggle" type="button" data-menu-toggle aria-label="Menu" aria-expanded="false" aria-controls="mobile-menu">
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="mobile-menu" id="mobile-menu" data-mobile-menu>
+        <a class="mobile-link" href="../roster/">Roster</a>
+        <a class="mobile-link" href="./">Pack</a>
+        <a class="mobile-link" href="../#lifecycle">Lifecycle</a>
+        <a class="mobile-link" href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">GitHub</a>
+      </div>
+    </header>
+
+    <main id="main">
+      <section class="page-head">
+        <div class="hero-field" aria-hidden="true"></div>
+        <div class="shell page-head-inner">
+          <p class="eyebrow">The pack</p>
+          <h1>Vendor it, and every agent equips a persona.</h1>
+          <p>
+            <code>personas</code> is the gas-city pack behind blackrim-personas: the registry, the
+            equip and match engine, the warm-cache lifecycle, a SessionStart equip hook, and a CLI.
+            Pure standard library, no runtime third-party deps, no prompt fragments to maintain by hand.
+          </p>
+          <div class="hero-cta">
+            <a class="btn-primary" href="https://github.com/jsgerman-oss/blackrim-personas/tree/main/pack" target="_blank" rel="noreferrer">
+              Read the pack source
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="square" /></svg>
+            </a>
+            <a class="btn-ghost" href="../roster/">See the roster</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== WHAT IT PROVIDES ===================== -->
+      <section class="section">
+        <div class="shell pack-grid">
+          <div class="prose" data-reveal>
+            <p class="eyebrow">What it provides</p>
+            <h2>A small, runnable engine.</h2>
+            <p>
+              The pack is the runnable companion to the persona system. Nothing in the decision path is
+              hard-coded: the roster and the warm-cache policy are config, and the engine is a thin,
+              testable core the CLI and the equip hook both call.
+            </p>
+            <table class="spec-table">
+              <thead>
+                <tr><th>Path</th><th>Role</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>bin/personas</code></td><td>The list, show, lint, match, equip, cache, evict, sweep CLI.</td></tr>
+                <tr><td><code>personas/</code></td><td>The engine: registry loader, match rule, warm-cache lifecycle.</td></tr>
+                <tr><td><code>personas.toml</code></td><td>The roster of 10 personas and the warm-cache TTL policy.</td></tr>
+                <tr><td><code>hooks/</code></td><td>The SessionStart equip-on-task-pickup hook.</td></tr>
+                <tr><td><code>docs/DESIGN.md</code></td><td>The registry shape, the match rule, and the TTL reasoning.</td></tr>
+              </tbody>
+            </table>
+            <p>
+              Stdlib-only, on <code>tomllib</code> with a <code>tomli</code> fallback for older Python.
+              It mirrors the minimal footprint of <code>model-advisor</code> and <code>provider-forge</code>.
+            </p>
+          </div>
+
+          <div class="pack-side" data-reveal>
+            <div class="codeblock">
+              <div class="codeblock-head">quickstart</div>
+              <pre><span class="tok-comment"># the roster, and a registry integrity check</span>
+<span class="tok-cmd">personas list</span>
+<span class="tok-cmd">personas lint</span>
+
+<span class="tok-comment"># preview the equip decision for a task</span>
+<span class="tok-cmd">personas match</span> <span class="tok-flag">"a paginated REST endpoint"</span>
+
+<span class="tok-comment"># equip it into the shared warm cache</span>
+<span class="tok-cmd">personas equip</span> <span class="tok-flag">--from-bead pers-3f1</span></pre>
+            </div>
+            <p class="side-note">
+              <code>list</code>, <code>show</code>, <code>lint</code>, <code>match</code>, and
+              <code>cache</code> are pure reads. <code>equip</code>, <code>evict</code>, and
+              <code>sweep</code> mutate the shared warm cache.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== THE CLI ===================== -->
+      <section class="section">
+        <div class="shell">
+          <div class="section-head">
+            <p class="eyebrow">The CLI</p>
+            <h2>One command group per engine layer.</h2>
+            <p>
+              The CLI is the operator surface over the three layers, and adds no logic of its own.
+              Every command is a thin render over the registry, the match rule, or the cache, so the
+              CLI and the equip hook always make the same decision.
+            </p>
+          </div>
+          <table class="spec-table">
+            <thead>
+              <tr><th>Layer</th><th>Commands</th><th>What they do</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Registry</td>
+                <td><code>list</code> <code>show</code> <code>lint</code></td>
+                <td>The roster; one persona's full playbook and bar; an integrity check that gates on edits.</td>
+              </tr>
+              <tr>
+                <td>Equip decision</td>
+                <td><code>match</code> <code>equip</code></td>
+                <td>Preview the decision read-only, or materialize it into the shared warm cache.</td>
+              </tr>
+              <tr>
+                <td>Warm cache</td>
+                <td><code>cache</code> <code>evict</code> <code>sweep</code></td>
+                <td>What is warm and how long it has left; drop one persona; age out expired entries.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===================== INSTALL INTO A CITY ===================== -->
+      <section class="section">
+        <div class="shell">
+          <div class="section-head">
+            <p class="eyebrow">Install into a city</p>
+            <h2>Vendor it, register it, reload.</h2>
+            <p>
+              Drop <code>pack/</code> into the target city as <code>packs/personas/</code>, then install
+              at town or rig scope. It registers a direct <code>source = "packs/personas"</code> import,
+              runs <code>gc reload</code> so the equip hook is merged into projected settings, and verifies.
+            </p>
+          </div>
+          <div class="codeblock">
+            <div class="codeblock-head">packs/personas</div>
+            <pre><span class="tok-comment"># city-wide</span>
+<span class="tok-cmd">packs/personas/install.sh</span> <span class="tok-flag">--town</span>
+
+<span class="tok-comment"># one rig</span>
+<span class="tok-cmd">packs/personas/install.sh</span> <span class="tok-flag">--rig &lt;name&gt;</span>
+
+<span class="tok-comment"># preview without writing</span>
+<span class="tok-cmd">packs/personas/install.sh</span> <span class="tok-flag">--town --dry-run</span>
+
+<span class="tok-comment"># reverse it (--purge to drop the venv)</span>
+<span class="tok-cmd">packs/personas/uninstall.sh</span> <span class="tok-flag">--town</span></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== CTA ===================== -->
+      <section class="section cta-section">
+        <div class="shell cta-inner">
+          <p class="eyebrow">One role dimension</p>
+          <h2>Pick the tier, the model, and the persona.</h2>
+          <p>
+            personas slots in next to model-advisor and provider-forge as the role dimension of a
+            dispatch. Install all three and an agent arrives with the right tier, the right model, and
+            the right principal-engineer persona.
+          </p>
+          <div class="hero-cta">
+            <a class="btn-primary" href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">
+              Get it on GitHub
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 12h14M13 6l6 6-6 6" stroke-linecap="square" /></svg>
+            </a>
+            <a class="btn-ghost" href="../roster/">Open the roster matrix</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="shell foot-inner">
+        <div class="foot-brand">
+          <a class="brand" href="../">
+            <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+              <rect x="0.5" y="0.5" width="31" height="31" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+              <path d="M8 10.5 L13.5 16 L8 21.5" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linecap="square" />
+              <path d="M17.5 12.5 H25 M17.5 19.5 H25" fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="square" />
+            </svg>
+            <span class="wordmark">blackrim<span class="wordmark-accent">-personas</span></span>
+          </a>
+          <p class="foot-tag">
+            A dynamic principal-engineer persona system for agent fleets, shipped as a stdlib-only
+            gas-city pack: <code>registry + match + warm cache + hook + CLI</code>.
+          </p>
+        </div>
+        <nav class="foot-cols" aria-label="Footer">
+          <div class="foot-col">
+            <span class="foot-col-head">Project</span>
+            <a href="../roster/">Roster</a>
+            <a href="./">Pack</a>
+            <a href="https://github.com/jsgerman-oss/blackrim-personas" target="_blank" rel="noreferrer">Repository</a>
+          </div>
+          <div class="foot-col">
+            <span class="foot-col-head">Composes with</span>
+            <a href="../#lifecycle">The lifecycle</a>
+            <a href="../roster/">The roster</a>
+            <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a>
+          </div>
+        </nav>
+      </div>
+      <div class="shell foot-base">
+        <span>Built for <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a>, on Gas City.</span>
+        <span class="dim">MIT licensed &middot; 10 personas</span>
+      </div>
+    </footer>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
