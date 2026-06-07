@@ -63,9 +63,18 @@ the engine returns the registry's default (generalist) persona, flagged
 ## 3. Warm cache + TTL (`personas/cache.py`)
 
 The README lifecycle is materialize → execute → dematerialize → **warm** → **age out**.
-This module owns *warm* and *age out*: a JSON-backed cache of materialized personas with
-last-used timestamps, shared so the next agent reuses a warm persona without paying the
-materialize cost again.
+This module owns *warm* and *age out*: a JSON-backed cache of materialized personas,
+shared so the next agent reuses a warm persona without paying the materialize cost again.
+
+What is cached is the **materialized payload**, not merely a last-used timestamp. Each
+`WarmEntry` stores the persona's rendered `overlay` — the task-independent working
+context `match.render_overlay(persona)` assembles — plus a `fingerprint` of the persona
+definition it was rendered from. That is what makes the amortization real: `equip` takes
+a `materialize` thunk and calls it **only** on a cold/stale equip; a warm reuse returns
+the stored overlay untouched. (Provenance — the per-task "why this persona" note — is
+*not* cached: it is task-specific, so `match.render_provenance` composes it onto the
+cached overlay at presentation time, which is what lets one overlay be reused across
+different tasks.)
 
 ### The aging policy and its reasoning (README "Lifecycle TTL")
 
@@ -80,13 +89,19 @@ materialize cost again.
 - **Both are configurable** via `[cache]` (`idle_ttl_minutes` / `ceiling_ttl_hours`, or
   explicit `*_seconds` overrides). The defaults are the starting point, not a law.
 
-`equip(persona_id, now)` is the write path: it sweeps expired entries first (lazy
-eviction), then either *touches* a still-warm persona (slide `last_used_at`, bump
-`use_count`, `was_warm=True`) or materializes a fresh one. A ceiling-expired persona is
-swept and re-materialized with a new `materialized_at`, so it genuinely re-reads the
-registry. `now` is injected into every time-dependent method, so the policy is
-deterministically testable (the suite drives the full idle/ceiling state machine with
-fixed clocks).
+`equip(persona_id, now, *, materialize=None, fingerprint="")` is the write path: it
+sweeps expired entries first (lazy eviction), then either *touches* a still-warm persona
+(slide `last_used_at`, bump `use_count`, return the stored overlay, `was_warm=True`) or
+materializes a fresh one (call `materialize`, store overlay + `fingerprint`, reset
+`materialized_at`, `was_warm=False`). A persona is re-materialized when it is cold,
+idle/ceiling-expired, **or** its `fingerprint` no longer matches the current definition —
+so a registry edit is picked up *immediately*, not only at the 2-hour ceiling, and a warm
+reuse never serves a stale overlay. The fingerprint (`match.persona_fingerprint`) is a
+cheap digest of exactly the definition fields the overlay renders, so checking it never
+costs a re-render. `materialize` is optional: omit it for a metadata-only entry (the
+pre-payload behavior). `now` is injected into every time-dependent method, so the policy
+is deterministically testable (the suite drives the full idle/ceiling/drift state machine
+with fixed clocks and a counting materializer that asserts exactly when the cost is paid).
 
 ### Concurrency and location
 

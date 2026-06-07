@@ -1,16 +1,26 @@
-"""Warm-cache + TTL lifecycle — materialized personas with last-used timestamps.
+"""Warm-cache + TTL lifecycle — materialized personas kept warm for reuse.
 
 The README lifecycle: materialize -> execute -> dematerialize -> *warm* -> age out.
-This module owns the **warm** and **age-out** phases. A materialized persona lingers
-in a shared, JSON-backed cache so the next agent that needs it reuses it without
-paying the materialize cost again, and it is evicted once it goes cold per the
-configured :class:`~personas.registry.CachePolicy`:
+This module owns the **warm** and **age-out** phases. A materialized persona — its
+assembled, ready-to-overlay working context — lingers in a shared, JSON-backed cache
+so the next agent that needs it reuses it **without paying the materialize cost
+again**, and it is evicted once it goes cold per the configured
+:class:`~personas.registry.CachePolicy`:
 
 - **Sliding idle TTL** (default 30 min): refreshed on every reuse. Evicts a persona
   no agent has equipped within the window.
 - **Absolute ceiling** (default 2 h): from first materialize. Force-refreshes even a
   continuously-reused persona so it picks up registry updates and the cache stays
   bounded.
+
+What is cached is the **materialized payload**, not just a last-used timestamp: each
+:class:`WarmEntry` carries the persona's rendered ``overlay`` (the working context the
+equip step assembles) plus a ``fingerprint`` of the persona definition it was rendered
+from. :meth:`WarmCache.equip` takes a ``materialize`` thunk and calls it **only** on a
+cold or stale equip — a warm reuse returns the stored overlay untouched, which is the
+cost the cache exists to amortize. The fingerprint makes that amortization safe: if the
+registry definition drifts, the stored overlay is re-materialized immediately rather
+than waiting for the ceiling, so a warm reuse never serves a stale persona.
 
 Eviction is lazy: every :meth:`WarmCache.equip` / :meth:`WarmCache.status` sweeps
 expired entries first, and :meth:`WarmCache.sweep` can be called explicitly. ``now``
@@ -27,22 +37,35 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from dataclasses import asdict, dataclass
-from typing import Optional
+from dataclasses import asdict, dataclass, replace
+from typing import Callable, Optional
 
 from personas.registry import CachePolicy
 
-SCHEMA = "personas.warm-cache.v0"
+#: Bumped from v0 when entries gained the materialized ``overlay`` + ``fingerprint``.
+#: The reader tolerates rows missing those fields, so a v0 file still loads (its entries
+#: simply re-materialize on next equip), and the cache is always re-derivable anyway.
+SCHEMA = "personas.warm-cache.v1"
 
 
 @dataclass(frozen=True)
 class WarmEntry:
-    """One materialized persona in the warm cache."""
+    """One materialized persona in the warm cache.
+
+    ``overlay`` is the materialized payload — the rendered working context a warm reuse
+    returns instead of re-assembling. ``fingerprint`` is a digest of the persona
+    definition it was rendered from, so :meth:`WarmCache.equip` can detect a registry
+    edit and re-materialize before the ceiling. Both default to empty for a
+    metadata-only entry (no materializer supplied) and for forward-compatible reads of a
+    pre-payload cache file.
+    """
 
     persona_id: str
     materialized_at: float  # epoch seconds of first materialize (drives the ceiling)
     last_used_at: float     # epoch seconds of most recent equip (drives the idle TTL)
     use_count: int          # how many times it has been equipped while warm
+    overlay: str = ""       # the materialized working context (what the cache amortizes)
+    fingerprint: str = ""   # digest of the persona definition this overlay was made from
 
     def idle_age(self, now: float) -> float:
         return max(0.0, now - self.last_used_at)
@@ -75,6 +98,11 @@ class EquipOutcome:
     entry: WarmEntry
     was_warm: bool                # True = reused an already-warm persona (no materialize)
     evicted: tuple[WarmEntry, ...]  # entries swept on this equip (cold/expired)
+
+    @property
+    def overlay(self) -> str:
+        """The materialized working context for this equip (served warm or freshly made)."""
+        return self.entry.overlay
 
 
 @dataclass(frozen=True)
@@ -113,6 +141,10 @@ class WarmCache:
                     materialized_at=float(rec["materialized_at"]),
                     last_used_at=float(rec["last_used_at"]),
                     use_count=int(rec.get("use_count", 1)),
+                    # Absent on a v0 (pre-payload) file: degrade to a metadata-only entry
+                    # that re-materializes on its next equip rather than failing the read.
+                    overlay=str(rec.get("overlay", "")),
+                    fingerprint=str(rec.get("fingerprint", "")),
                 )
             except (KeyError, TypeError, ValueError):
                 continue  # skip malformed rows, keep the rest
@@ -175,14 +207,35 @@ class WarmCache:
 
     # ---- mutation ---------------------------------------------------------- #
 
-    def equip(self, persona_id: str, now: float) -> EquipOutcome:
+    def equip(
+        self,
+        persona_id: str,
+        now: float,
+        *,
+        materialize: Optional[Callable[[], str]] = None,
+        fingerprint: str = "",
+    ) -> EquipOutcome:
         """Materialize ``persona_id`` (or reuse it if already warm), then persist.
 
-        Sweeps expired entries first (lazy eviction). If the persona is present and
-        live, it is *touched* — ``last_used_at`` slides to ``now`` and ``use_count``
-        increments — and ``was_warm`` is True (the materialize cost is saved). A
-        ceiling-expired persona is swept and re-materialized fresh, so it picks up
-        registry updates (``was_warm`` False).
+        Sweeps expired entries first (lazy eviction), then either reuses a still-warm
+        persona or materializes a fresh one:
+
+        - **Warm reuse** (``was_warm`` True). A live entry whose payload is still valid is
+          *touched* — ``last_used_at`` slides to ``now`` and ``use_count`` increments —
+          and its stored ``overlay`` is returned **without calling** ``materialize``.
+          This is the cost the warm cache exists to amortize.
+        - **Materialize** (``was_warm`` False). On a cold, ceiling/idle-expired, or
+          definition-drifted persona, ``materialize`` (if given) is invoked once to
+          assemble the overlay, and the entry is stored fresh with ``materialized_at``
+          reset to ``now`` — so a ceiling refresh and a registry edit both genuinely
+          re-read the registry.
+
+        ``materialize`` is the (potentially expensive) thunk that assembles the persona's
+        working context; omit it for a metadata-only entry (overlay stays empty), which
+        preserves the pre-payload behavior. ``fingerprint`` is the current persona
+        definition's digest: a live entry whose stored fingerprint differs is treated as
+        stale and re-materialized, so an edited persona is picked up immediately rather
+        than only at the ceiling. When ``fingerprint`` is empty no drift check is done.
         """
         entries = self._read()
         evicted = tuple(
@@ -191,20 +244,26 @@ class WarmCache:
         live = {pid: e for pid, e in entries.items() if e.is_live(self.policy, now)}
 
         existing = live.get(persona_id)
-        if existing is not None:
-            entry = WarmEntry(
-                persona_id=persona_id,
-                materialized_at=existing.materialized_at,
-                last_used_at=now,
-                use_count=existing.use_count + 1,
-            )
+        # A warm reuse needs a live entry that (a) was rendered from the current
+        # definition — or no fingerprint was supplied to check against — and (b) actually
+        # carries a payload to return when a materializer is in play. Otherwise we
+        # re-materialize, paying the cost the cache could not amortize this time.
+        fingerprint_ok = not fingerprint or (
+            existing is not None and existing.fingerprint == fingerprint
+        )
+        has_payload = materialize is None or (existing is not None and existing.overlay != "")
+        if existing is not None and fingerprint_ok and has_payload:
+            entry = replace(existing, last_used_at=now, use_count=existing.use_count + 1)
             was_warm = True
         else:
+            overlay = materialize() if materialize is not None else ""
             entry = WarmEntry(
                 persona_id=persona_id,
                 materialized_at=now,
                 last_used_at=now,
                 use_count=1,
+                overlay=overlay,
+                fingerprint=fingerprint,
             )
             was_warm = False
 

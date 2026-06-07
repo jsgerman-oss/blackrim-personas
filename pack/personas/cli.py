@@ -71,30 +71,17 @@ def _persona_dict(p: R.Persona) -> dict[str, Any]:
     }
 
 
-def _persona_context_md(p: R.Persona, result: Optional[M.MatchResult] = None) -> str:
-    """The markdown overlaid onto an agent when this persona is equipped."""
-    lines = [f"# Equipped persona: {p.title}", ""]
-    if result is not None:
-        if result.is_fallback:
-            lines.append(
-                "_No strong task match — equipped the default (generalist) persona._"
-            )
-        elif result.matched:
-            lines.append(
-                f"_Matched on: {', '.join(result.matched)} (score {result.score:g})._"
-            )
-        lines.append("")
-    if p.domain:
-        lines += [f"**Domain.** {p.domain}", ""]
-    if p.playbook:
-        lines += ["**Playbook.**", p.playbook, ""]
-    if p.skills:
-        lines.append(f"**Skills to lean on:** {', '.join(p.skills)}")
-    if p.tools:
-        lines.append(f"**Tools:** {', '.join(p.tools)}")
-    if p.verification_bar:
-        lines += ["", f"**Verification bar (do not hand off below this):** {p.verification_bar}"]
-    return "\n".join(lines).strip() + "\n"
+def _compose_context(persona_overlay: str, result: M.MatchResult) -> str:
+    """Compose the equip overlay shown/emitted for a task: provenance note + the overlay.
+
+    ``persona_overlay`` is the materialized, task-independent context the warm cache
+    serves (``EquipOutcome.overlay``); :func:`personas.match.render_provenance` adds the
+    cheap, per-task "why this persona" note on top. Composing here (rather than baking
+    provenance into the cached overlay) is what lets the cache reuse one overlay across
+    different tasks — the amortization the warm cache exists for.
+    """
+    provenance = M.render_provenance(result)
+    return f"{provenance}\n\n{persona_overlay}" if provenance else persona_overlay
 
 
 def _fmt_secs(s: float) -> str:
@@ -180,7 +167,7 @@ def cmd_show(args: argparse.Namespace, out) -> int:
     if args.json:
         out.write(json.dumps(_persona_dict(p), indent=2) + "\n")
         return 0
-    out.write(_persona_context_md(p))
+    out.write(M.render_overlay(p))
     if p.when_to_equip:
         out.write(f"\n**When to equip:** {p.when_to_equip}\n")
     if p.match_keywords:
@@ -226,14 +213,23 @@ def cmd_equip(args: argparse.Namespace, out) -> int:
 
     result = M.match_persona(config, task)
     cache = _cache(args, config)
-    outcome = cache.equip(result.best.id, now=time.time())
+    # Materialize through the warm cache: the overlay is rendered (the cost) only on a
+    # cold/stale equip; a warm reuse returns the stored overlay untouched. The fingerprint
+    # invalidates a warm entry whose persona definition has since changed.
+    outcome = cache.equip(
+        result.best.id,
+        now=time.time(),
+        materialize=lambda: M.render_overlay(result.best),
+        fingerprint=M.persona_fingerprint(result.best),
+    )
+    context = _compose_context(outcome.overlay, result)
 
     if args.emit_context:
         # Claude Code SessionStart hook payload: inject the persona as added context.
         payload = {
             "hookSpecificOutput": {
                 "hookEventName": "SessionStart",
-                "additionalContext": _persona_context_md(result.best, result),
+                "additionalContext": context,
             }
         }
         out.write(json.dumps(payload) + "\n")
@@ -251,7 +247,7 @@ def cmd_equip(args: argparse.Namespace, out) -> int:
         return 0
 
     state = "reused warm" if outcome.was_warm else "materialized"
-    out.write(_persona_context_md(result.best, result))
+    out.write(context)
     out.write(f"\n[{state}; use_count={outcome.entry.use_count}]\n")
     if outcome.evicted:
         out.write(f"[evicted (cold): {', '.join(e.persona_id for e in outcome.evicted)}]\n")
@@ -281,6 +277,10 @@ def cmd_cache(args: argparse.Namespace, out) -> int:
                             "expiry_reason": s.expiry_reason,
                             "remaining_idle_seconds": round(s.remaining_idle, 3),
                             "remaining_ceiling_seconds": round(s.remaining_ceiling, 3),
+                            # Whether this entry carries a materialized overlay (the cached
+                            # payload a warm reuse serves) vs. a metadata-only row.
+                            "materialized": bool(s.entry.overlay),
+                            "overlay_bytes": len(s.entry.overlay),
                         }
                         for s in statuses
                     ],

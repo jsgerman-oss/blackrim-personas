@@ -34,6 +34,8 @@ This module owns both halves of the README's *equip* step:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 
@@ -216,6 +218,25 @@ def match_persona(config: PersonasConfig, task: str) -> MatchResult:
 # --------------------------------------------------------------------------- #
 
 
+def render_provenance(result: MatchResult | None) -> str:
+    """One-line note on *why* a persona was equipped for a task (``""`` if none).
+
+    Separated from :func:`render_overlay` because provenance is *task-specific* — it
+    names the terms this task matched — whereas the rest of the overlay is a pure
+    function of the persona. The warm cache (:mod:`personas.cache`) therefore caches the
+    persona overlay (task-independent, reusable across tasks) and a caller composes this
+    cheap per-task note with it at presentation time. :func:`render_overlay` folds it in
+    when handed a result, so a single-shot caller still gets a self-documenting overlay.
+    """
+    if result is None:
+        return ""
+    if result.is_fallback:
+        return "_No strong task match — equipped the default (generalist) persona._"
+    if result.matched:
+        return f"_Matched on: {', '.join(result.matched)} (score {result.score:g})._"
+    return ""
+
+
 def render_overlay(persona: Persona, result: MatchResult | None = None) -> str:
     """Materialize ``persona`` into the markdown overlay injected onto an agent.
 
@@ -225,22 +246,19 @@ def render_overlay(persona: Persona, result: MatchResult | None = None) -> str:
     Claude Code ``SessionStart`` hook as ``additionalContext``, overlaying the
     persona's role onto the agent for the duration of one task.
 
-    When ``result`` is given, a one-line provenance note explains *why* this persona
-    was equipped — the terms it matched, or that it is the default fallback — so the
-    overlay is self-documenting. Persona fields that are empty are omitted rather than
-    rendered as bare headings, so a lean persona still produces clean output. The
-    result always ends in exactly one trailing newline.
+    Called *without* ``result`` it renders the persona's task-independent working
+    context — exactly the form the warm cache materializes and reuses across tasks (see
+    :func:`personas.cache.WarmCache.equip`). Called *with* ``result`` it also folds in a
+    one-line :func:`render_provenance` note explaining *why* this persona was equipped,
+    so a single-shot overlay is self-documenting. Persona fields that are empty are
+    omitted rather than rendered as bare headings, so a lean persona still produces clean
+    output. The result always ends in exactly one trailing newline.
     """
     lines = [f"# Equipped persona: {persona.title}", ""]
     if result is not None:
-        if result.is_fallback:
-            lines.append(
-                "_No strong task match — equipped the default (generalist) persona._"
-            )
-        elif result.matched:
-            lines.append(
-                f"_Matched on: {', '.join(result.matched)} (score {result.score:g})._"
-            )
+        provenance = render_provenance(result)
+        if provenance:
+            lines.append(provenance)
         lines.append("")
     if persona.domain:
         lines += [f"**Domain.** {persona.domain}", ""]
@@ -294,3 +312,34 @@ def equip(config: PersonasConfig, task: str) -> Equip:
     """
     result = match_persona(config, task)
     return Equip(result=result, overlay=render_overlay(result.best, result))
+
+
+def persona_fingerprint(persona: Persona) -> str:
+    """A stable digest of the persona-definition fields :func:`render_overlay` reads.
+
+    The warm cache stores this alongside a materialized overlay so it can tell, cheaply,
+    whether the registry definition has drifted since — and re-materialize if so, instead
+    of serving a stale overlay (see :func:`personas.cache.WarmCache.equip`). It is a pure
+    function of the definition: no markdown is assembled and no files are read, so it is
+    cheap enough to compute on every equip without defeating the amortization it guards.
+
+    It covers exactly the fields the (task-independent) overlay renders — ``title`` derives
+    from ``id`` — and deliberately *excludes* ``when_to_equip``, ``match_keywords``, and
+    ``weight``, which steer routing but never appear in the overlay, so editing them does
+    not needlessly invalidate warm entries. **Invariant:** keep this in lockstep with
+    :func:`render_overlay` — a field that starts appearing in the overlay must be added
+    here, or a definition change could be silently served stale until the ceiling.
+    """
+    payload = json.dumps(
+        {
+            "id": persona.id,
+            "domain": persona.domain,
+            "playbook": persona.playbook,
+            "skills": list(persona.skills),
+            "tools": list(persona.tools),
+            "verification_bar": persona.verification_bar,
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()

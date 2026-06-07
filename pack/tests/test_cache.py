@@ -212,3 +212,138 @@ def test_cache_path_walks_up_for_beads(tmp_path):
     start.mkdir(parents=True)
     got = C.default_cache_path(start_dir=str(start), env={})
     assert got == os.path.join(str(tmp_path), ".beads", "personas", "warm-cache.json")
+
+
+# ---- materialized payload: the cost the warm cache amortizes ---------------- #
+
+
+class _Materializer:
+    """A counting overlay thunk so a test can assert exactly when materialize ran."""
+
+    def __init__(self, text: str = "OVERLAY") -> None:
+        self.text = text
+        self.calls = 0
+
+    def __call__(self) -> str:
+        self.calls += 1
+        return self.text
+
+
+def test_cold_equip_runs_materialize_and_stores_overlay(warm):
+    mk = _Materializer("MATERIALIZED")
+    out = warm.equip("p", now=0.0, materialize=mk, fingerprint="fp1")
+    assert out.was_warm is False
+    assert mk.calls == 1
+    assert out.overlay == "MATERIALIZED"          # EquipOutcome.overlay convenience
+    assert out.entry.overlay == "MATERIALIZED"
+    assert out.entry.fingerprint == "fp1"
+
+
+def test_warm_reuse_serves_cached_overlay_without_rematerializing(warm):
+    mk = _Materializer("MATERIALIZED")
+    warm.equip("p", now=0.0, materialize=mk, fingerprint="fp1")
+    out = warm.equip("p", now=50.0, materialize=mk, fingerprint="fp1")  # within idle TTL
+    assert out.was_warm is True
+    assert out.overlay == "MATERIALIZED"          # same payload, served warm
+    assert mk.calls == 1                           # materialize was NOT called again
+    assert out.entry.use_count == 2
+
+
+def test_idle_expiry_rematerializes(warm):
+    mk = _Materializer()
+    warm.equip("p", now=0.0, materialize=mk, fingerprint="fp")
+    out = warm.equip("p", now=101.0, materialize=mk, fingerprint="fp")  # idle-expired
+    assert out.was_warm is False
+    assert mk.calls == 2                           # paid the materialize cost again
+
+
+def test_ceiling_refresh_rematerializes(warm):
+    mk = _Materializer()
+    warm.equip("p", now=0.0, materialize=mk, fingerprint="fp")
+    # Kept warm by steady reuse (each within the 100s idle window) right up to the
+    # ceiling — no re-materialize...
+    for t in (90.0, 180.0, 270.0, 360.0, 450.0, 540.0, 630.0, 720.0, 810.0, 900.0, 990.0):
+        warm.equip("p", now=t, materialize=mk, fingerprint="fp")
+    assert mk.calls == 1
+    # ...then past the 1000s ceiling it is force-refreshed.
+    out = warm.equip("p", now=1001.0, materialize=mk, fingerprint="fp")
+    assert out.was_warm is False
+    assert mk.calls == 2
+    assert out.entry.materialized_at == 1001.0
+
+
+# ---- fingerprint: pick up registry edits before the ceiling ----------------- #
+
+
+def test_fingerprint_drift_rematerializes_within_ttl(warm):
+    v1, v2 = _Materializer("OVERLAY-v1"), _Materializer("OVERLAY-v2")
+    warm.equip("p", now=0.0, materialize=v1, fingerprint="fp-v1")
+    # Same persona, still well within the idle TTL, but its definition changed:
+    out = warm.equip("p", now=10.0, materialize=v2, fingerprint="fp-v2")
+    assert out.was_warm is False                   # re-materialized despite being time-live
+    assert out.overlay == "OVERLAY-v2"
+    assert out.entry.fingerprint == "fp-v2"
+    assert out.entry.materialized_at == 10.0       # ceiling clock reset on refresh
+    assert v1.calls == 1 and v2.calls == 1
+
+
+def test_matching_fingerprint_reuses_within_ttl(warm):
+    mk = _Materializer()
+    warm.equip("p", now=0.0, materialize=mk, fingerprint="fp")
+    out = warm.equip("p", now=10.0, materialize=mk, fingerprint="fp")
+    assert out.was_warm is True
+    assert mk.calls == 1
+
+
+def test_no_fingerprint_skips_the_drift_check(warm):
+    # Omitting the fingerprint disables drift detection: a live entry is reused on TTL
+    # alone (the pre-payload behavior), even though the materializer text differs.
+    a, b = _Materializer("A"), _Materializer("B")
+    warm.equip("p", now=0.0, materialize=a)        # no fingerprint
+    out = warm.equip("p", now=10.0, materialize=b)  # no fingerprint
+    assert out.was_warm is True
+    assert out.overlay == "A"                       # still serving the first payload
+    assert b.calls == 0
+
+
+# ---- payload persistence + the v0 -> v1 upgrade path ------------------------ #
+
+
+def test_overlay_round_trips_through_disk_and_serves_warm(warm):
+    mk = _Materializer("PERSISTED")
+    warm.equip("p", now=0.0, materialize=mk, fingerprint="fp")
+    # A fresh cache object over the same file == another agent/process on the shared cache.
+    reopened = C.WarmCache(warm.path, POLICY)
+    e = reopened.entries()["p"]
+    assert e.overlay == "PERSISTED"
+    assert e.fingerprint == "fp"
+    out = reopened.equip("p", now=20.0, materialize=mk, fingerprint="fp")
+    assert out.was_warm is True                     # reused across the process boundary
+    assert out.overlay == "PERSISTED"
+    assert mk.calls == 1                            # the other process did not re-materialize
+
+
+def test_get_returns_entry_with_overlay(warm):
+    warm.equip("p", now=0.0, materialize=_Materializer("OV"), fingerprint="fp")
+    e = warm.get("p", now=10.0)
+    assert e is not None
+    assert e.overlay == "OV"
+    assert e.fingerprint == "fp"
+
+
+def test_metadata_only_entry_rematerializes_when_payload_needed(warm):
+    # A pre-payload (v0) entry, or any equip that stored no overlay, has nothing to serve
+    # warm: a later equip that DOES supply a materializer must re-materialize.
+    warm.equip("p", now=0.0)                        # metadata-only: overlay == ""
+    assert warm.entries()["p"].overlay == ""
+    mk = _Materializer("FRESH")
+    out = warm.equip("p", now=10.0, materialize=mk)
+    assert out.was_warm is False                    # had no payload to reuse
+    assert out.overlay == "FRESH"
+    assert mk.calls == 1
+
+
+def test_equip_without_materializer_stays_metadata_only(warm):
+    out = warm.equip("p", now=0.0)
+    assert out.overlay == ""
+    assert out.entry.fingerprint == ""

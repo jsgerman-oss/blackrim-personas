@@ -7,6 +7,7 @@ deterministically, and a no-signal task falls back to the default. Pure stdlib +
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 
@@ -343,3 +344,82 @@ def test_equip_falls_back_when_no_signal():
     assert e.is_fallback
     assert e.persona.id == cfg().default_persona_id
     assert "No strong task match" in e.overlay
+
+
+# ---- provenance (factored out of render_overlay) --------------------------- #
+
+
+def test_render_provenance_none_is_empty():
+    assert M.render_provenance(None) == ""
+
+
+def test_render_provenance_matches_the_overlay_line():
+    result = M.match_persona(cfg(), "audit the upload handler for sql injection")
+    prov = M.render_provenance(result)
+    assert prov.startswith("_Matched on:")
+    # render_overlay folds in exactly this line when given a result.
+    assert prov in M.render_overlay(result.best, result)
+
+
+def test_render_provenance_marks_fallback():
+    result = M.match_persona(cfg(), "do the thing with the stuff")
+    assert result.is_fallback
+    prov = M.render_provenance(result)
+    assert "No strong task match" in prov
+    assert prov in M.render_overlay(result.best, result)
+
+
+# ---- persona_fingerprint (what the warm cache keys staleness on) ------------ #
+
+
+def _lean(**over) -> R.Persona:
+    base = dict(
+        id="p",
+        domain="d",
+        when_to_equip="w",
+        verification_bar="v",
+        playbook="pb",
+        match_keywords=("k",),
+        skills=("s",),
+        tools=("t",),
+        weight=1.0,
+    )
+    base.update(over)
+    return R.Persona(**base)
+
+
+def test_persona_fingerprint_is_stable_and_sha256_hex():
+    p = _backend(cfg())
+    fp = M.persona_fingerprint(p)
+    assert fp == M.persona_fingerprint(p)
+    assert len(fp) == 64
+    assert all(c in "0123456789abcdef" for c in fp)
+
+
+def test_persona_fingerprint_changes_on_every_overlay_field():
+    fp0 = M.persona_fingerprint(_lean())
+    # Each of these is rendered by render_overlay, so a change must be detected.
+    assert M.persona_fingerprint(_lean(id="q")) != fp0          # id drives the title
+    assert M.persona_fingerprint(_lean(domain="d2")) != fp0
+    assert M.persona_fingerprint(_lean(playbook="pb2")) != fp0
+    assert M.persona_fingerprint(_lean(skills=("s", "s2"))) != fp0
+    assert M.persona_fingerprint(_lean(tools=("t2",))) != fp0
+    assert M.persona_fingerprint(_lean(verification_bar="v2")) != fp0
+
+
+def test_persona_fingerprint_ignores_non_overlay_fields():
+    fp0 = M.persona_fingerprint(_lean())
+    # These steer routing but never appear in the overlay — editing them must NOT
+    # invalidate a warm entry (it would re-materialize an identical overlay for nothing).
+    assert M.persona_fingerprint(_lean(when_to_equip="totally different")) == fp0
+    assert M.persona_fingerprint(_lean(match_keywords=("x", "y", "z"))) == fp0
+    assert M.persona_fingerprint(_lean(weight=9.0)) == fp0
+
+
+def test_persona_fingerprint_tracks_render_overlay():
+    # The invariant the warm cache relies on: when the rendered overlay changes, so does
+    # the fingerprint, so a definition edit is never served stale.
+    base = _backend(cfg())
+    edited = dataclasses.replace(base, playbook=base.playbook + " And one more rule.")
+    assert M.render_overlay(edited) != M.render_overlay(base)
+    assert M.persona_fingerprint(edited) != M.persona_fingerprint(base)

@@ -148,6 +148,31 @@ def test_equip_emit_context_is_sessionstart_payload(cache_file):
     assert "Verification bar" in hso["additionalContext"]
 
 
+def test_equip_warm_reuse_serves_identical_cached_context(cache_file):
+    # First equip materializes; the second reuses warm. The emitted SessionStart context
+    # must be byte-identical — a warm reuse serves the cached overlay, it does not re-render.
+    _, first = run(
+        ["equip", "implement a backend endpoint", "--emit-context"], cache_file=cache_file
+    )
+    _, second = run(
+        ["equip", "implement a backend endpoint", "--emit-context"], cache_file=cache_file
+    )
+    assert first == second
+    # ...and the cache reports the reuse.
+    _, j = run(["equip", "implement a backend endpoint", "--json"], cache_file=cache_file)
+    assert json.loads(j)["equipped"]["was_warm"] is True
+
+
+def test_equip_emit_context_includes_provenance(cache_file):
+    rc, s = run(
+        ["equip", "audit for sql injection", "--emit-context"], cache_file=cache_file
+    )
+    assert rc == 0
+    ctx = json.loads(s)["hookSpecificOutput"]["additionalContext"]
+    assert "Matched on:" in ctx  # the per-task provenance note
+    assert "# Equipped persona: Principal Security Engineer" in ctx  # the cached overlay
+
+
 def test_equip_empty_task_exits_2(cache_file):
     rc, s = run(["equip"], cache_file=cache_file)
     assert rc == 2
@@ -188,6 +213,16 @@ def test_cache_json_reports_policy(cache_file):
     data = json.loads(s)
     assert data["policy"]["idle_ttl_seconds"] == 1800.0
     assert data["policy"]["ceiling_ttl_seconds"] == 7200.0
+
+
+def test_cache_json_reports_materialized_payload(cache_file):
+    run(["equip", "implement a backend endpoint"], cache_file=cache_file)
+    rc, s = run(["cache", "--json"], cache_file=cache_file)
+    assert rc == 0
+    entry = json.loads(s)["entries"][0]
+    assert entry["persona_id"] == "principal-backend-engineer"
+    assert entry["materialized"] is True
+    assert entry["overlay_bytes"] > 0
 
 
 def test_sweep_all_clears(cache_file):
